@@ -133,10 +133,30 @@ async function main() {
         ],
     };
 
-    let startTime = null;
+    let lastTime = null;
+    let centerX = 0;
+    let centerY = 0;
+    let goingUp = false;
     function render(now) {
-        if (!startTime) startTime = now;
-        const elapsed = (now - startTime) / 1000;
+        const elapsed = (now - lastTime) / 1000;
+        lastTime = now;
+
+        if (goingUp){
+            centerY += elapsed;
+            if (centerY >= 1.0 - 0.5) goingUp = false;
+        }
+        else {
+            centerY -= elapsed;
+            if (centerY <= -1.0 + 0.5) goingUp = true;
+        }
+
+
+
+        let result = createCircleTriangleStrip(centerX, centerY - elapsed, 0.5, 64);
+
+        device.queue.writeBuffer(vertexBuffer, 0, result.vertices);
+
+
 
         // Get the current texture from the canvas context and
         // set it as the texture to render to.
