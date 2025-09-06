@@ -1,3 +1,14 @@
+struct Uniforms {
+    aspectRatio: f32,
+    cameraConstant: f32,
+    eye: vec3<f32>,
+    u: vec3<f32>,
+    v: vec3<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> uniforms: Uniforms;
+
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
     @location(0) imagePlanePos : vec2<f32>,
@@ -19,7 +30,7 @@ fn vs_main(@location(0) pos: vec2<f32>) -> VertexOutput {
 @fragment
 fn fs_main(@location(0) imagePlanePos: vec2<f32>) -> @location(0) vec4<f32> {
     let origin = vec3<f32>(0.0, 0.0, 0.0);
-    let direction = normalize(vec3<f32>(imagePlanePos.x, imagePlanePos.y, -1.0));
+    let direction = normalize(vec3<f32>(imagePlanePos.x * uniforms.aspectRatio, imagePlanePos.y, 0.0));
     let ray = Ray(origin, direction);
     let color = 0.5 * direction + vec3<f32>(0.5, 0.5, 0.5);
     return vec4<f32>(color, 1.0);

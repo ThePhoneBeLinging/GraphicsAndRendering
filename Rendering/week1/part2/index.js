@@ -36,6 +36,43 @@ async function main() {
     new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
     vertexBuffer.unmap();
 
+    let aspectRatio = canvas.width / canvas.height;
+    const cameraConstant = 1;
+
+    // Eye position
+    const eye = vec3(2, 1.5, 2.0); // Example eye position
+    const at = vec3(0, 0.5, 0);  // Look-at point
+    const up = vec3(0, 1, 0);  // Up vector
+
+    // Compute basis vectors
+    const w = normalize(subtract(eye, at)); // Camera backward
+    const u = normalize(cross(up, w));      // Camera right
+    const v = cross(w, u);                     // Camera up
+
+    // Flatten for uniform upload
+    const eyeArr = [eye[0], eye[1], eye[2]];
+    const uArr = [u[0], u[1], u[2]];
+    const vArr = [v[0], v[1], v[2]];
+
+
+    // --- Uniform buffer: aspectRatio, cameraConstant, eye, u, v ---
+    const uniformData = new Float32Array([
+        aspectRatio, cameraConstant,
+        ...eyeArr,
+        ...uArr,
+        ...vArr
+    ]);
+    const uniformBuffer = device.createBuffer({
+        size: 64,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true
+    });
+    new Float32Array(uniformBuffer.getMappedRange()).set(uniformData);
+    uniformBuffer.unmap();
+    device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+
+
+
     const pipeline = device.createRenderPipeline({
         layout: 'auto',
         vertex: {
@@ -66,6 +103,19 @@ async function main() {
         ],
     };
 
+    const bindGroupLayout = pipeline.getBindGroupLayout(0);
+
+    // Create a bind group
+    const bindGroup = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: { buffer: uniformBuffer },
+            },
+        ],
+    });
+
     function render() {
         // Get the current texture from the canvas context and
         // set it as the texture to render to.
@@ -77,6 +127,7 @@ async function main() {
 
         // make a render pass encoder to encode render specific commands
         const pass = encoder.beginRenderPass(renderPassDescriptor);
+        pass.setBindGroup(0, bindGroup);
         pass.setVertexBuffer(0, vertexBuffer);
         pass.setPipeline(pipeline);
         pass.draw(4);
@@ -97,4 +148,3 @@ function fail(msg) {
 window.addEventListener("load", (event) => {
     main();
 });
-

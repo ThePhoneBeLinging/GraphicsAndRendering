@@ -3,10 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <title>Week1</title>
-    <h1>Week1 - Part 1</h1>
-    <canvas height="512" width="512"></canvas>
+    <h1>Week1 - Part 2</h1>
+    <canvas height="512" width="1024"></canvas>
+    <script src="../../../MV.js"></script>
     <script type="module" src="index.js"></script>
     <script type="x-shader/x-wgsl">
+        struct Uniforms {
+            aspectRatio: f32,
+            cameraConstant: f32,
+            eye: vec3<f32>,
+            u: vec3<f32>,
+            v: vec3<f32>,
+        };
+
+        @group(0) @binding(0)
+        var<uniform> uniforms: Uniforms;
+
         struct VertexOutput {
             @builtin(position) position : vec4<f32>,
             @location(0) imagePlanePos : vec2<f32>,
@@ -28,7 +40,7 @@
         @fragment
         fn fs_main(@location(0) imagePlanePos: vec2<f32>) -> @location(0) vec4<f32> {
             let origin = vec3<f32>(0.0, 0.0, 0.0);
-            let direction = normalize(vec3<f32>(imagePlanePos.x, imagePlanePos.y, 0.0));
+            let direction = normalize(vec3<f32>(imagePlanePos.x * uniforms.aspectRatio, imagePlanePos.y, 0.0));
             let ray = Ray(origin, direction);
             let color = 0.5 * direction + vec3<f32>(0.5, 0.5, 0.5);
             return vec4<f32>(color, 1.0);
