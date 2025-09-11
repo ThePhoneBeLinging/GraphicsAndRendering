@@ -93,9 +93,7 @@ async function main() {
         });
 
         const color = hexToRgbaArray(pointColorPicker.value).slice(0, 3);
-        const squareColors = Array(6).fill(color).flat();
-
-        vertexColors = Float32Array.from([...vertexColors, ...squareColors]);
+        vertexColors = Float32Array.from([...vertexColors, ...color]);
 
         console.log(vertexColors)
         vertexColorBuffer = device.createBuffer({
