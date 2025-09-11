@@ -30,27 +30,25 @@ async function main() {
     `,
     });
 
-    function createSquare(x, y, sizeX, sizeY) {
+    function createSquare(centerX, centerY, sizeX, sizeY) {
         const halfSizeX = sizeX / 2;
         const halfSizeY = sizeY / 2;
-        let floatArray = new Float32Array([
-            x - halfSizeX, y + halfSizeY,
-            x + halfSizeX, y + halfSizeY,
-            x - halfSizeX, y - halfSizeY,
+        return [
+            centerX - halfSizeX, centerY + halfSizeY,
+            centerX + halfSizeX, centerY + halfSizeY,
+            centerX - halfSizeX, centerY - halfSizeY,
 
-            x - halfSizeX, y - halfSizeY,
-            x + halfSizeX, y + halfSizeY,
-            x + halfSizeX, y - halfSizeY,
-        ]);
-        floatArray.forEach((val, idx) => {
-            floatArray[idx] = (val / canvas.width) * 2 - 1;
-        })
-        return floatArray;
+            centerX - halfSizeX, centerY - halfSizeY,
+            centerX + halfSizeX, centerY + halfSizeY,
+            centerX + halfSizeX, centerY - halfSizeY,
+        ];
     }
 
-    let firstSquareVertices = createSquare(256,256,20,20);
-    let secondSquareVertices = createSquare(512,256,20,20);
-    let thirdSquareVertices = createSquare(512,512,20,20);
+    let sizeOfPixelX = (2 / canvas.width) * 20;
+    let sizeOfPixelY = (2 / canvas.height) * 20;
+    let firstSquareVertices = createSquare(0.0,0.0,sizeOfPixelX,sizeOfPixelY);
+    let secondSquareVertices = createSquare(1,0,sizeOfPixelX,sizeOfPixelY);
+    let thirdSquareVertices = createSquare(1,1,sizeOfPixelX,sizeOfPixelY);
 
 
     let vertices = new Float32Array(firstSquareVertices.length + secondSquareVertices.length + thirdSquareVertices.length);
@@ -65,11 +63,14 @@ async function main() {
     });
     device.queue.writeBuffer(vertexBuffer, 0, vertices);
 
-
-
     canvas.addEventListener("click", (event) => {
-        let square = createSquare(event.x,event.y, 5, 5);
-        vertices = Float32Array.from([...vertices, square[0], square[1], square[2], square[3], square[4], square[5]]);
+        const boundingRect = event.target.getBoundingClientRect();
+        let mousePosX = event.x - boundingRect.x;
+        let mousePosY = event.y - boundingRect.y;
+        let xVal = ((mousePosX / canvas.width) - 1/2) * 2;
+        let yVal = -((mousePosY / canvas.height) - 1/2) * 2;
+        let square = createSquare(xVal, yVal, 0.1, 0.1);
+        vertices = Float32Array.from([...vertices, ...square]);
         vertexBuffer = device.createBuffer({
             label: "vertices",
             size: vertices.byteLength,
