@@ -57,7 +57,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     var ray = Ray(origin, direction, 1e-4, 1e5);
 
-    var color = vec3f(0.6, 0.8, 1.0); // sky/background
+    var color =  vec3f(0.1, 0.3, 0.6);
 
     let plane_position = vec3<f32>(0.0, 0.0, 0.0);
     let plane_normal = vec3<f32>(0.0, 1.0, 0.0);
@@ -99,7 +99,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(color, 1.0);
 }
 
-fn ray_plane_intersect(ray: Ray, planePoint: vec3f, planeNormal: vec3f) -> HitInfo {
+fn ray_plane_intersect(ray: Ray, planePoint: vec3f, planeNormal: vec3f, color: vec3<f32>) -> HitInfo {
     let denom = dot(planeNormal, ray.direction);
     if (abs(denom) > 1e-4) {
         let t = dot(planeNormal, (planePoint - ray.origin)) / denom;
@@ -144,7 +144,7 @@ fn ray_triangle_intersection(ray: Ray, v0: vec3<f32>, v1: vec3<f32>, v2: vec3<f3
     return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), 0u);
 }
 
-fn ray_sphere_intersection(ray: Ray, sphereCenter: vec3<f32>, sphereRadius: f32) -> HitInfo {
+fn ray_sphere_intersection(ray: Ray, sphereCenter: vec3<f32>, sphereRadius: f32, color: vec3<f32>) -> HitInfo {
     let oc = ray.origin - sphereCenter;
     let a = dot(ray.direction, ray.direction);
     let b = 2.0 * dot(oc, ray.direction);
