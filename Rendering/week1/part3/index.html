@@ -80,43 +80,42 @@
 
             let sphere_c = vec3<f32>(0.0, 0.5, 0.0);
             let sphere_r = 0.3;
-            let sphere_col = vec3<f32>(0.0, 0.0, 0.0);
+            let sphere_color = vec3<f32>(0.0, 0.0, 0.0);
 
             let point_light_position = vec3<f32>(0.0, 1.0, 0.0);
 
             let plane_point  = vec3f(0.0, 0.0, 0.0);
 
 
-            var hit = ray_plane_intersect(ray, plane_point, plane_normal);
+            var hit = ray_plane_intersect(ray, plane_point, plane_normal, plane_color);
 
             if (hit.has_hit) {
                 color   = hit.color;
                 ray.tmax = hit.dist;
             }
 
-            hit = ray_sphere_intersection(ray, sphere_c, sphere_r);
+            hit = ray_sphere_intersection(ray, sphere_c, sphere_r, sphere_color);
             if (hit.has_hit) {
               color   = hit.color;
               ray.tmax = hit.dist;
             }
 
-            hit = ray_triangle_intersection(ray, triangle_v0, triangle_v1, triangle_v2);
+            hit = ray_triangle_intersection(ray, triangle_v0, triangle_v1, triangle_v2, triangle_color);
             if (hit.has_hit) {
-               color   = hit.color;
+               color = hit.color;
                ray.tmax = hit.dist;
             }
 
             return vec4<f32>(color, 1.0);
         }
 
-        fn ray_plane_intersect(ray: Ray, planePoint: vec3f, planeNormal: vec3f) -> HitInfo {
+        fn ray_plane_intersect(ray: Ray, planePoint: vec3f, planeNormal: vec3f, color: vec3<f32>) -> HitInfo {
             let denom = dot(planeNormal, ray.direction);
             if (abs(denom) > 1e-4) {
                 let t = dot(planeNormal, (planePoint - ray.origin)) / denom;
                 if (t >= ray.tmin && t <= ray.tmax) {
                     let position = ray.origin + t * ray.direction;
                     let normal = normalize(planeNormal);
-                    let color = vec3f(0.1, 0.7, 0.0); // your plane color
                     return HitInfo(true, t, position, normal, color, 1u);
                 }
             }
@@ -124,7 +123,7 @@
         }
 
 
-        fn ray_triangle_intersection(ray: Ray, v0: vec3<f32>, v1: vec3<f32>, v2: vec3<f32>) -> HitInfo {
+        fn ray_triangle_intersection(ray: Ray, v0: vec3<f32>, v1: vec3<f32>, v2: vec3<f32>, color: vec3<f32>) -> HitInfo {
             let edge1 = v1 - v0;
             let edge2 = v2 - v0;
             let h = cross(ray.direction, edge2);
@@ -150,13 +149,12 @@
             if (t > ray.tmin && t < ray.tmax) {
                 let position = ray.origin + ray.direction * t;
                 let normal = normalize(cross(edge1, edge2));
-                let color = vec3f(1.0, 0.5, 0.31);
                 return HitInfo(true, t, position, normal, color, 2u);
             }
             return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), 0u);
         }
 
-        fn ray_sphere_intersection(ray: Ray, sphereCenter: vec3<f32>, sphereRadius: f32) -> HitInfo {
+        fn ray_sphere_intersection(ray: Ray, sphereCenter: vec3<f32>, sphereRadius: f32, color: vec3<f32>) -> HitInfo {
             let oc = ray.origin - sphereCenter;
             let a = dot(ray.direction, ray.direction);
             let b = 2.0 * dot(oc, ray.direction);
@@ -176,9 +174,10 @@
             }
             let position = ray.origin + t * ray.direction;
             let normal = normalize(position - sphereCenter);
-            let color = vec3f(0.1, 0.2, 0.5);
             return HitInfo(true, t, position, normal, color, 3u);
         }
+
+
 
     </script>
 </head>
