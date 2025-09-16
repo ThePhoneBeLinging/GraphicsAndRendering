@@ -31,20 +31,15 @@ async function main() {
 
     // Pack uniforms (64 bytes)
     const uniformData = new Float32Array([
-        // 0..3
-        aspectRatio, cameraConstant, 0, 0,        // pad to 16B
-        // 4..7
-        eye[0], eye[1], eye[2], 0,                // pad after vec3
-        // 8..11
+        aspectRatio, cameraConstant, 0, 0,
+        eye[0], eye[1], eye[2], 0,
         up[0],  up[1],  up[2],  0,
-        // 12..15
         at[0],  at[1],  at[2],  0,
-        // 16..19
-        gamma, 0, 0, 0                             // tail padding
+        gamma, 0, 0, 0
     ]);
 
     const uniformBuffer = device.createBuffer({
-        size: 80,
+        size: 96,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true
     });

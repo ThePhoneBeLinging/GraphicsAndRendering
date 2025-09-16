@@ -1,10 +1,16 @@
 struct Uniforms {
     aspectRatio: f32,
     cameraConstant: f32,
+    _pad0: f32,
+    _pad1: f32,
     eye: vec3f,
+    _pad2: f32,
     up: vec3f,
+    _pad3: f32,
     at: vec3f,
-    gamma: f32
+    _pad4: f32,
+    gamma: f32,
+    _pad5: vec3f,
 };
 
 struct Ray {
@@ -80,69 +86,110 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             break;
         }
     }
-    return vec4f(result, background_alpha);
+    return vec4f(pow(result,vec3f(1.0/uniforms.gamma)), background_alpha);
 }
 
 fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> bool {
-    let plane_point  = vec3f(0.0, 0.0, 0.0);
-    let plane_normal = vec3f(0.0, 1.0, 0.0);
-    let plane_color  = vec3f(0.1, 0.7, 0.0);
+    const plane_point  = vec3f(0.0, 0.0, 0.0);
+    const plane_normal = vec3f(0.0, 1.0, 0.0);
+    const plane_color  = vec3f(0.1, 0.7, 0.0);
 
-    let triangle_v0 = vec3f(-0.2, 0.1, 0.9);
-    let triangle_v1 = vec3f( 0.2, 0.1, 0.9);
-    let triangle_v2 = vec3f(-0.2, 0.1,-0.1);
-    let triangle_color = vec3f(0.4, 0.3, 0.2);
+    const triangle_v0 = vec3f(-0.2, 0.1, 0.9);
+    const triangle_v1 = vec3f( 0.2, 0.1, 0.9);
+    const triangle_v2 = vec3f(-0.2, 0.1,-0.1);
+    const triangle_color = vec3f(0.4, 0.3, 0.2);
 
-    let sphere_c = vec3f(0.0, 0.5, 0.0);
-    let sphere_r = 0.3;
-    let sphere_color = vec3f(0.0, 0.0, 0.0);
+    const sphere_c = vec3f(0.0, 0.5, 0.0);
+    const sphere_r = 0.3;
+    const sphere_color = vec3f(0, 0, 0);
 
-    var color = vec3f(0.0);
+    var resultColor = vec3f(0.0);
+
+    var closest_t = (*ray).tmax;
+    var found = false;
+    var best = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), 0u);
 
     *hitInfo = ray_plane_intersect(*ray, plane_point, plane_normal, plane_color);
-    if (hitInfo.has_hit)
+    if (hitInfo.has_hit && hitInfo.dist < ray.tmax)
     {
-        ray.tmax = hitInfo.dist;
-        color = hitInfo.color;
+        (*ray).tmax = hitInfo.dist;
+        resultColor = hitInfo.color;
+    }
+
+    *hitInfo = ray_plane_intersect(*ray, plane_point, plane_normal, plane_color);
+    if (hitInfo.has_hit && hitInfo.dist < ray.tmax)
+    {
+        (*ray).tmax = hitInfo.dist;
+        resultColor = hitInfo.color;
     }
 
     *hitInfo = ray_sphere_intersection(*ray, sphere_c, sphere_r, sphere_color);
-    if (hitInfo.has_hit)
+    if (hitInfo.has_hit && hitInfo.dist < ray.tmax)
     {
-        ray.tmax = hitInfo.dist;
-        color = hitInfo.color;
+        (*ray).tmax = hitInfo.dist;
+        resultColor = hitInfo.color;
     }
 
-    *hitInfo = ray_triangle_intersection(*ray, triangle_v0, triangle_v1, triangle_v2, triangle_color);
-    if (hitInfo.has_hit)
-    {
-        ray.tmax = hitInfo.dist;
-        color = hitInfo.color;
+    (*hitInfo).color = resultColor;
+
+    let ph = ray_plane_intersect(*ray, plane_point, plane_normal, plane_color);
+    if (ph.has_hit && ph.dist < closest_t && ph.dist > (*ray).tmin) {
+        best = ph;
+        closest_t = ph.dist;
+        found = true;
     }
 
-    hitInfo.color = color;
-    return hitInfo.has_hit;
+    let sh = ray_sphere_intersection(*ray, sphere_c, sphere_r, sphere_color);
+    if (sh.has_hit && sh.dist < closest_t && sh.dist > (*ray).tmin) {
+        best = sh;
+        closest_t = sh.dist;
+        found = true;
+    }
+
+    let th = ray_triangle_intersection(*ray, triangle_v0, triangle_v1, triangle_v2, triangle_color);
+    if (th.has_hit && th.dist < closest_t && th.dist > (*ray).tmin) {
+        best = th;
+        closest_t = th.dist;
+        found = true;
+    }
+
+    if (found) {
+        *hitInfo = best;
+        (*ray).tmax = closest_t;
+    }
+    return found;
 }
 
 
 fn sample_point_light(p: vec3f) -> Light {
+    let PI = 3.14159265359;
     let light_pos = vec3f(0.0, 1.0, 0.0);
-    let I = vec3f(3.14159265, 3.14159265, 3.14159265); // radiant intensity
-    let r = light_pos - p;
-    let dist = length(r);
-    let w_i = normalize(r);
-    return Light(I, w_i, dist);
-    /*
-    let light_pos = vec3f(0.0, 1.0, 0.0);
-    let I = vec3f(3.14159265, 3.14159265, 3.14159265); // radiant intensity
-    let omega = normalize(light_pos - p);
-    let dist = length(light_pos - p);
-    let L_i = I / (dist * dist);
-    return Light(L_i, omega, dist);*/
+    let intensity = vec3f(PI);
+
+    let toL = light_pos - p;
+    let d2 = max(dot(toL, toL), 1e-6);
+    let d = sqrt(d2);
+    let wi = toL / d;
+
+    let Li = intensity * uniforms.gamma / d2;
+
+    return Light(Li, wi, d);
 }
 
 fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
-    return hitInfo.color;
+    let PI = 3.14159265359;
+
+    let p = (*hitInfo).position;
+    let n = normalize((*hitInfo).normal);
+    let albedo = (*hitInfo).color;
+
+    let L = sample_point_light(p);
+    let ndotl = max(dot(n, L.w_i), 0.0);
+
+    // Lambert: Lo = (albedo/π) * Li * cosθ
+    let Lo = (albedo / PI) * L.L_i * ndotl;
+
+    return Lo;
 }
 
 fn ray_plane_intersect(ray: Ray, planePoint: vec3f, planeNormal: vec3f, color: vec3f) -> HitInfo {
