@@ -69,8 +69,7 @@ async function main() {
         let mousePosY = event.y - boundingRect.y;
         let xVal = ((mousePosX / canvas.width) - 1/2) * 2;
         let yVal = -((mousePosY / canvas.height) - 1/2) * 2;
-        let square = createSquare(xVal, yVal, 0.1, 0.1);
-        vertices = Float32Array.from([...vertices, ...square]);
+        vertices = Float32Array.from([...vertices, xVal, yVal]);
         vertexBuffer = device.createBuffer({
             label: "vertices",
             size: vertices.byteLength,
@@ -96,6 +95,9 @@ async function main() {
     const pipeline = device.createRenderPipeline({
         label: 'our hardcoded red triangle pipeline',
         layout: 'auto',
+        primitive: {
+            topology: 'point-list',
+        },
         vertex: {
             module,
             buffers: [vertexBufferLayout]
