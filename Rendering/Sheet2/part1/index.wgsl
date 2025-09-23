@@ -254,5 +254,5 @@ fn ray_sphere_intersection(ray: Ray, sphereCenter: vec3f, sphereRadius: f32, col
     let position = ray.origin + t * ray.direction;
     let normal = normalize(position - sphereCenter);
     let colorAsDiffuse = Color(color * 0.1, color * 0.9, vec3f(0.1));
-    return HitInfo(true, t, position, normal, colorAsDiffuse, 3u);
+    return HitInfo(true, t, position, normal, colorAsDiffuse, 1);
 }

@@ -109,6 +109,67 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     return vec4f(vec3f(0.0),1.0);
 }
 
+fn texture_nearest(texture: texture_2d<f32>, texcoords: vec2f, repeat: bool) -> vec3f {
+    let res = textureDimensions(texture);
+    var coords = texcoords;
+    if (repeat) {
+        coords = fract(coords);
+    }
+    let texelCoords = vec2i(i32(coords.x * f32(res.x)), i32(coords.y * f32(res.y)));
+    let texcolor = textureLoad(texture, texelCoords, 0);
+    return texcolor.rgb;
+}
+
+fn texture_linear(tex: texture_2d<f32>, clip: vec2f, repeat: bool) -> vec3f {
+    let res_u = textureDimensions(tex);
+    let res_f = vec2f(res_u);
+    let res_i = vec2i(res_u);
+
+    var uv = clip * 0.5 + 0.5;
+
+    if (repeat) {
+        uv = fract(uv);
+    } else {
+        uv = clamp(uv, vec2f(0.0), vec2f(1.0));
+    }
+
+    let ab = uv * res_f;
+
+    var U  = i32(floor(ab.x));
+    var V  = i32(floor(ab.y));
+
+    let cx = ab.x - f32(U);
+    let cy = ab.y - f32(V);
+
+    var U1 = U + 1;
+    var V1 = V + 1;
+
+    if (repeat) {
+        let w = res_i.x;
+        let h = res_i.y;
+        U  = ((U  % w) + w) % w;
+        U1 = ((U1 % w) + w) % w;
+        V  = ((V  % h) + h) % h;
+        V1 = ((V1 % h) + h) % h;
+    } else {
+        let maxx = res_i.x - 1;
+        let maxy = res_i.y - 1;
+        U  = clamp(U,  0, maxx);
+        U1 = clamp(U1, 0, maxx);
+        V  = clamp(V,  0, maxy);
+        V1 = clamp(V1, 0, maxy);
+    }
+
+    let c00 = textureLoad(tex, vec2i(U,  V ), 0).rgb;
+    let c10 = textureLoad(tex, vec2i(U1, V ), 0).rgb;
+    let c01 = textureLoad(tex, vec2i(U,  V1), 0).rgb;
+    let c11 = textureLoad(tex, vec2i(U1, V1), 0).rgb;
+
+    let cx0 = mix(c00, c10, cx);
+    let cx1 = mix(c01, c11, cx);
+    return mix(cx0, cx1, cy);
+}
+
 fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> bool {
     const plane_point  = vec3f(0.0, 0.0, 0.0);
     const plane_normal = vec3f(0.0, 1.0, 0.0);

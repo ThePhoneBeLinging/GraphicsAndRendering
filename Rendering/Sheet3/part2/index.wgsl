@@ -4,7 +4,7 @@ struct Uniforms {
     repeat: f32,
     filterMode: f32,
     eye: vec3f,
-    _pad2: f32,
+    useTexture: f32,
     up: vec3f,
     _pad3: f32,
     at: vec3f,
@@ -42,6 +42,12 @@ struct Light {
     w_i: vec3f,
     dist: f32,
     rayFromPoint: vec3f
+};
+
+struct Onb {
+    tangent: vec3f,
+    binormal: vec3f,
+    normal: vec3f,
 };
 
 @group(0) @binding(0)
@@ -84,7 +90,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let color = Color(vec3f(0.0), vec3f(0.0), vec3f(0.0));
     var hitInfo = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), color, 0u, 1.5, 0.0);
     var result = vec3f(0.0);
-/*
     for (var i = 0; i < maxDepth; i++) {
         if (intersect_scene(&ray, &hitInfo)) {
             result += shade(&ray, &hitInfo);
@@ -98,15 +103,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
     return vec4f(pow(result,vec3f(1.0/uniforms.gamma)), background_alpha);
-    */
-    if (uniforms.filterMode == 0) {
-        return vec4f(texture_nearest(my_texture,p, uniforms.repeat == 1), 1.0);
-    } else if (uniforms.filterMode == 1) {
-        return vec4f(texture_linear(my_texture, p, uniforms.repeat == 1), 1.0);
-    } else {
-        return vec4f(vec3f(1,0,0),1.0);
-    }
-    return vec4f(vec3f(0.0),1.0);
 }
 
 fn texture_nearest(texture: texture_2d<f32>, texcoords: vec2f, repeat: bool) -> vec3f {
@@ -121,41 +117,32 @@ fn texture_nearest(texture: texture_2d<f32>, texcoords: vec2f, repeat: bool) -> 
 }
 
 fn texture_linear(tex: texture_2d<f32>, clip: vec2f, repeat: bool) -> vec3f {
-    // Texture resolution
-    let res_u = textureDimensions(tex);   // vec2<u32>
-    let res_f = vec2f(res_u);             // float version
-    let res_i = vec2i(res_u);             // int version
+    let res_u = textureDimensions(tex);
+    let res_f = vec2f(res_u);
+    let res_i = vec2i(res_u);
 
-    // Map clip-space [-1,1] → uv [0,1]
     var uv = clip * 0.5 + 0.5;
 
-    // Addressing mode
     if (repeat) {
         uv = fract(uv);
     } else {
         uv = clamp(uv, vec2f(0.0), vec2f(1.0));
     }
 
-    // Continuous texel coordinates (a,b) in slide
     let ab = uv * res_f;
 
-    // (U,V) = floor(a,b)
     var U  = i32(floor(ab.x));
     var V  = i32(floor(ab.y));
 
-    // (c_x, c_y) = (a,b) - (U,V)
     let cx = ab.x - f32(U);
     let cy = ab.y - f32(V);
 
-    // Neighbor indices: (U+1,V), (U,V+1), (U+1,V+1)
     var U1 = U + 1;
     var V1 = V + 1;
 
-    // Apply addressing to ALL four indices
     if (repeat) {
         let w = res_i.x;
         let h = res_i.y;
-        // positive modulo: ((x % n) + n) % n
         U  = ((U  % w) + w) % w;
         U1 = ((U1 % w) + w) % w;
         V  = ((V  % h) + h) % h;
@@ -169,13 +156,11 @@ fn texture_linear(tex: texture_2d<f32>, clip: vec2f, repeat: bool) -> vec3f {
         V1 = clamp(V1, 0, maxy);
     }
 
-    // Fetch four neighbors (mip 0)
-    let c00 = textureLoad(tex, vec2i(U,  V ), 0).rgb; // (U,V)
-    let c10 = textureLoad(tex, vec2i(U1, V ), 0).rgb; // (U+1,V)
-    let c01 = textureLoad(tex, vec2i(U,  V1), 0).rgb; // (U,V+1)
-    let c11 = textureLoad(tex, vec2i(U1, V1), 0).rgb; // (U+1,V+1)
+    let c00 = textureLoad(tex, vec2i(U,  V ), 0).rgb;
+    let c10 = textureLoad(tex, vec2i(U1, V ), 0).rgb;
+    let c01 = textureLoad(tex, vec2i(U,  V1), 0).rgb;
+    let c11 = textureLoad(tex, vec2i(U1, V1), 0).rgb;
 
-    // Bilinear interpolation (weights cx, cy)
     let cx0 = mix(c00, c10, cx);
     let cx1 = mix(c01, c11, cx);
     return mix(cx0, cx1, cy);
@@ -188,6 +173,7 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
     const plane_shinyness = 0;
     const plane_shader = 0u;
     const plane_index_of_refraction = 1.5;
+    const plane_onb = Onb(vec3f(-1.0, 0.0, 0.0), vec3f(0.0, 0.0, 1.0), vec3f(0.0, 1.0, 0.0));
 
     const triangle_v0 = vec3f(-0.2, 0.1, 0.9);
     const triangle_v1 = vec3f( 0.2, 0.1, 0.9);
@@ -209,7 +195,7 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
     let color = Color(vec3f(0.0), vec3f(0.0), vec3f(0.0));
     var best = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), color, 0u, 0.0, 0.0);
 
-    let ph = ray_plane_intersect(*ray, plane_point, plane_normal, plane_color, plane_shader, plane_shinyness, plane_index_of_refraction);
+    let ph = ray_plane_intersect(*ray, plane_point, plane_onb, plane_color, plane_shader, plane_shinyness, plane_index_of_refraction);
     if (ph.has_hit && ph.dist < closest_t && ph.dist > (*ray).tmin) {
         best = ph;
         closest_t = ph.dist;
@@ -267,6 +253,7 @@ fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
     switch (hitInfo.shader)
     {
         case 0u: { // Plane
+
             break;
         }
         case 1u: { // Sphere
@@ -344,15 +331,27 @@ fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
     return Lo;
 }
 
-fn ray_plane_intersect(ray: Ray, planePoint: vec3f, planeNormal: vec3f, color: vec3f, shader: u32, shinyness: f32, index_of_refraction: f32) -> HitInfo {
-    let denom = dot(planeNormal, ray.direction);
+fn ray_plane_intersect(ray: Ray, planePoint: vec3f, onb: Onb, color: vec3f, shader: u32, shinyness: f32, index_of_refraction: f32) -> HitInfo {
+    let denom = dot(onb.normal, ray.direction);
     if (abs(denom) > 1e-4) {
-        let t = dot(planeNormal, (planePoint - ray.origin)) / denom;
+        let t = dot(onb.normal, (planePoint - ray.origin)) / denom;
         if (t >= ray.tmin && t <= ray.tmax) {
             let position = ray.origin + t * ray.direction;
-            let normal = normalize(planeNormal);
-            let randoColor = Color(color * 0.1, color * 0.9, vec3f(0.0));
-            return HitInfo(true, t, position, normal, randoColor, shader, index_of_refraction, shinyness);
+            let normal = normalize(onb.normal);
+            let local = position - planePoint;
+            let u = dot(local, onb.tangent);
+            let v = dot(local, onb.binormal);
+            let textureCord = vec2f(u, v) * 0.2;
+            var planeColor = vec3f(0.0);
+            if (uniforms.filterMode == 0) {
+                planeColor = vec3f(texture_nearest(my_texture,textureCord, uniforms.repeat == 1));
+            } else if (uniforms.filterMode == 1) {
+                planeColor = vec3f(texture_linear(my_texture, textureCord, uniforms.repeat == 1));
+            }
+            if (uniforms.useGrassTexture == 0.0) {
+                planeColor = color;
+            }
+            return HitInfo(true, t, position, normal, Color(vec3f(0.1,0.1,0.1) * planeColor,vec3f(0.9,0.9,0.9) * planeColor, vec3(0)), shader, index_of_refraction, shinyness);
         }
     }
     return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);

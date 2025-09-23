@@ -48,6 +48,19 @@ async function main() {
         render();
     });
 
+    addressModeDropdown.addEventListener('change', () => {
+        let value = addressModeDropdown.value;
+        uniformData[2] = value === "repeat" ? 1 : 0;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        render();
+    });
+    filterMode.addEventListener('change', () => {
+        let filterModeValue = filterMode.value;
+        uniformData[3] = filterModeValue === 'nearest' ? 0 : 1;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        render();
+    });
+
     let aspectRatio = canvas.width / canvas.height;
 
     const eye = [2,1.5,2];
@@ -64,7 +77,7 @@ async function main() {
     ]);
 
     const uniformBuffer = device.createBuffer({
-        size: 96,
+        size: 112,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true
     });

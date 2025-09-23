@@ -27,6 +27,7 @@ async function main() {
     const gammaValue = document.getElementById('gamma-value');
     const addressModeDropdown = document.getElementById('filter-mode');
     const filterMode = document.getElementById('sunday');
+    const useTexture = document.getElementById('use-texture');
 
     var cameraConstant = parseFloat(cameraConstantValue.value);
     var gamma = parseFloat(gammaValue.value);
@@ -62,6 +63,13 @@ async function main() {
     });
 
     let aspectRatio = canvas.width / canvas.height;
+    useTexture.checked = true;
+
+    useTexture.addEventListener('change', () => {
+        uniformData[7] = useTexture.checked ? 1 : 0;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        render();
+    });
 
     const eye = [2,1.5,2];
     const at  = [0,0.5,0];
@@ -70,7 +78,7 @@ async function main() {
     // Pack uniforms (64 bytes)
     const uniformData = new Float32Array([
         aspectRatio, cameraConstant, 0, 0,
-        eye[0], eye[1], eye[2], 0,
+        eye[0], eye[1], eye[2], 1,
         up[0],  up[1],  up[2],  0,
         at[0],  at[1],  at[2],  0,
         gamma, 0
