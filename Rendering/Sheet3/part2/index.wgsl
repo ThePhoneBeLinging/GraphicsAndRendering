@@ -348,7 +348,7 @@ fn ray_plane_intersect(ray: Ray, planePoint: vec3f, onb: Onb, color: vec3f, shad
             } else if (uniforms.filterMode == 1) {
                 planeColor = vec3f(texture_linear(my_texture, textureCord, uniforms.repeat == 1));
             }
-            if (uniforms.useGrassTexture == 0.0) {
+            if (uniforms.useTexture == 0.0) {
                 planeColor = color;
             }
             return HitInfo(true, t, position, normal, Color(vec3f(0.1,0.1,0.1) * planeColor,vec3f(0.9,0.9,0.9) * planeColor, vec3(0)), shader, index_of_refraction, shinyness);
