@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sheet3 - Part 2</title>
+    <h1>Sheet3 - Part 2</h1>
+    <canvas height="1024" width="1024"></canvas>
+    <script src="../../../MV.js"></script>
+    <script type="module" src="index.js"></script>
+
+</head>
+<body>
+<br>
+<label for="zoom">Zoom:</label>
+<input type="range" id="zoom" min="0.2" max="2.5" step="0.01" value="1.0">
+<span id="zoom-value">1.0</span>
+
+<label for="gamma">Gamma:</label>
+<input type="range" id="gamma" min="0.5" max="3.0" step="0.01" value="2.4">
+<span id="gamma-value">2.2</span>
+
+<label for="filter-mode">AddressMode:</label>
+<select id="filter-mode">
+    <option value="clamp-to-edge">Clamp-To-Edge</option>
+    <option value="repeat">Repeat</option>
+</select>
+
+<label for="sunday">Filter Mode:</label>
+<select id="sunday">
+    <option value="nearest">Nearest</option>
+    <option value="linear">Linear</option>
+</select>
+
+<label for="use-texture">Use Texture:</label>
+<input type="checkbox" id="use-texture" checked>
+
+</body>
+</html>
