@@ -68,35 +68,55 @@ async function main() {
         primitive: { topology: 'line-list', cullMode: 'none' },
     });
 
-    const uniformBuffer = device.createBuffer({
-        size: sizeof['mat4'],
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
-    });
+    const uniformBuffers = [0, 1, 2].map(() =>
+        device.createBuffer({
+            size: sizeof['mat4'],
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        })
+    );
 
-    const model = mat4(1);
+    const bindGroups = uniformBuffers.map(buf =>
+        device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [{ binding: 0, resource: { buffer: buf } }],
+        })
+    );
 
-    const s = Math.sqrt(3);
-    const eye = vec3(s, s, s);
-    const at  = vec3(0.5, 0.5, 0.5);
+    const aspect =
+        (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
+    const projGL = perspective(45.0, aspect, 0.1, 100.0);
+
+    const zfix = mat4(
+        1,0,0,0,
+        0,1,0,0,
+        0,0,0.5,0.5,
+        0,0,0,1
+    );
+    const eye = vec3(0,0, 10);
+    const at  = vec3(0,0, 0);
     const up  = vec3(0, 1, 0);
     const view = lookAt(eye, at, up);
 
-    const pad = 1.2;
-    const projGL = ortho(-pad, pad, -pad, pad, -4.0, 4.0);
+    const baseModel = translate(-0.5, -0.5, -0.5);
 
-    const zfix = mat4(
-        1, 0, 0, 0,
-        0, 1, 0, 0,
-        0, 0, 0.5, 0.5,
-        0, 0, 0, 1
-    );
+    function mvpFor(model) {
+        return mult(zfix, mult(projGL, mult(view, model)));
+    }
 
-    const mvp = mult(zfix, mult(projGL, mult(view, model)));
-    device.queue.writeBuffer(uniformBuffer, 0, flatten(mvp));
+    const modelOnePoint =
+        mult(translate(-3.0, 0.0, 0.0), baseModel);
+
+    const modelTwoPoint =
+        mult(translate(0.0, 0.0, 0.0),
+            mult(rotateY(35), baseModel));
+
+    const modelThreePoint =
+        mult(translate(3.0, 0.0, 0.0),
+            mult(rotateX(-20), mult(rotateY(35), baseModel)));
+
+    device.queue.writeBuffer(uniformBuffers[0], 0, flatten(mvpFor(modelOnePoint)));
+    device.queue.writeBuffer(uniformBuffers[1], 0, flatten(mvpFor(modelTwoPoint)));
+    device.queue.writeBuffer(uniformBuffers[2], 0, flatten(mvpFor(modelThreePoint)));
 
     const renderPass = {
         colorAttachments: [{
@@ -111,11 +131,15 @@ async function main() {
         renderPass.colorAttachments[0].view = context.getCurrentTexture().createView();
         const encoder = device.createCommandEncoder();
         const pass = encoder.beginRenderPass(renderPass);
+
         pass.setPipeline(pipeline);
-        pass.setBindGroup(0, bindGroup);
         pass.setVertexBuffer(0, vertexBuffer);
         pass.setIndexBuffer(indexBuffer, 'uint32');
-        pass.drawIndexed(wire_indices.length);
+        for (let i = 0; i < 3; ++i) {
+            pass.setBindGroup(0, bindGroups[i]);
+            pass.drawIndexed(wire_indices.length);
+        }
+
         pass.end();
         device.queue.submit([encoder.finish()]);
     }
