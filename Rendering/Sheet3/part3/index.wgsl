@@ -8,7 +8,7 @@ struct Uniforms {
     up: vec3f,
     _pad3: f32,
     at: vec3f,
-    _pad4: f32,
+    jitterVectorCount: f32,
     gamma: f32,
     _pad5: vec3f,
 };
@@ -50,9 +50,14 @@ struct Onb {
     normal: vec3f,
 };
 
+struct JitterBuffer {
+    data: array<vec2f>,
+};
+
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var my_texture: texture_2d<f32>;
+@group(0) @binding(2) var<storage, read> jitters: JitterBuffer;
 
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,

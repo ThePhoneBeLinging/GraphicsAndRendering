@@ -152,7 +152,7 @@ async function main() {
     };
 
 
-    var bindGroup = device.createBindGroup({
+    let bindGroup = device.createBindGroup({
         layout: bindGroupLayout,
         entries: [
             { binding: 0, resource: { buffer: uniformBuffer } },
