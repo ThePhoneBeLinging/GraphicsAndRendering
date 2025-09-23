@@ -25,6 +25,8 @@ async function main() {
     const cameraConstantValue = document.getElementById('zoom-value');
     const gammaSlider = document.getElementById('gamma');
     const gammaValue = document.getElementById('gamma-value');
+    const addressModeDropdown = document.getElementById('filter-mode');
+    const filterMode = document.getElementById('sunday');
 
     var cameraConstant = parseFloat(cameraConstantValue.value);
     var gamma = parseFloat(gammaValue.value);
@@ -58,7 +60,7 @@ async function main() {
         eye[0], eye[1], eye[2], 0,
         up[0],  up[1],  up[2],  0,
         at[0],  at[1],  at[2],  0,
-        gamma, 0, 0, 0
+        gamma, 0
     ]);
 
     const uniformBuffer = device.createBuffer({
@@ -68,9 +70,17 @@ async function main() {
     });
     new Float32Array(uniformBuffer.getMappedRange()).set(uniformData);
     uniformBuffer.unmap();
+    const texture = await load_texture(device, 'grass.jpg');
+
+    const bindGroupLayout = device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        ]
+    });
 
     const pipeline = device.createRenderPipeline({
-        layout: 'auto',
+        layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
         vertex: {
             module,
             entryPoint: 'vs_main',
@@ -91,11 +101,15 @@ async function main() {
         colorAttachments: [{ clearValue: [0,0,0,0], loadOp: 'clear', storeOp: 'store' }],
     };
 
-    const bindGroupLayout = pipeline.getBindGroupLayout(0);
-    const bindGroup = device.createBindGroup({
+
+    var bindGroup = device.createBindGroup({
         layout: bindGroupLayout,
-        entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+        entries: [
+            { binding: 0, resource: { buffer: uniformBuffer } },
+            { binding: 1, resource: texture.createView() },
+        ],
     });
+
 
     function render() {
         renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
@@ -112,6 +126,23 @@ async function main() {
     function animate() {
         device.queue.writeBuffer(uniformBuffer, 0, uniformData);
         render();
+    }
+
+    async function load_texture(device, filename) {
+        const response = await fetch(filename);
+        const blob = await response.blob();
+        const img = await createImageBitmap(blob, { colorSpaceConversion: 'none' });
+        const texture = device.createTexture({
+            size: [img.width, img.height, 1],
+            format: "rgba8unorm",
+            usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT
+        });
+        device.queue.copyExternalImageToTexture(
+            { source: img, flipY: true },
+            { texture: texture },
+            { width: img.width, height: img.height },
+        );
+        return texture;
     }
 
     addEventListener("wheel", (event) => {

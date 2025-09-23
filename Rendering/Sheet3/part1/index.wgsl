@@ -1,8 +1,8 @@
 struct Uniforms {
     aspectRatio: f32,
     cameraConstant: f32,
-    _pad0: f32,
-    _pad1: f32,
+    repeat: f32,
+    filterMode: f32,
     eye: vec3f,
     _pad2: f32,
     up: vec3f,
@@ -46,6 +46,7 @@ struct Light {
 
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var my_texture: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
@@ -83,7 +84,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let color = Color(vec3f(0.0), vec3f(0.0), vec3f(0.0));
     var hitInfo = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), color, 0u, 1.5, 0.0);
     var result = vec3f(0.0);
-
+/*
     for (var i = 0; i < maxDepth; i++) {
         if (intersect_scene(&ray, &hitInfo)) {
             result += shade(&ray, &hitInfo);
@@ -97,6 +98,15 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
     return vec4f(pow(result,vec3f(1.0/uniforms.gamma)), background_alpha);
+    */
+    if (uniforms.filterMode == 0) {
+        return vec4f(texture_nearest(my_texture,p, uniforms.repeat == 1), 1.0);
+    } else if (uniforms.filterMode == 1) {
+        return vec4f(texture_linear(my_texture, p, uniforms.repeat == 1), 1.0);
+    } else {
+        return vec4f(vec3f(1,0,0),1.0);
+    }
+    return vec4f(vec3f(0.0),1.0);
 }
 
 fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> bool {
