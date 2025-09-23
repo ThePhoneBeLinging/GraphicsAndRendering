@@ -21,6 +21,34 @@ async function main() {
     new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
     vertexBuffer.unmap();
 
+    function compute_jitters(jitter, pixelsize, subdivs)
+    {
+        const step = pixelsize/subdivs;
+        if(subdivs < 2) {
+            jitter[0] = 0.0;
+            jitter[1] = 0.0;
+        }
+        else {
+            for(var i = 0; i < subdivs; ++i)
+                for(var j = 0; j < subdivs; ++j) {
+                    const idx = (i*subdivs + j)*2;
+                    jitter[idx] = (Math.random() + j)*step - pixelsize*0.5;
+                    jitter[idx + 1] = (Math.random() + i)*step - pixelsize*0.5;
+                }
+        }
+    }
+
+    let subdivLevel = 1;
+    const subdivValue = document.getElementById('subdiv-value');
+    const subdivInc = document.getElementById('subdiv-inc');
+    const subdivDec = document.getElementById('subdiv-dec');
+
+    let jitter = new Float32Array(200);
+    const jitterBuffer = device.createBuffer({
+        size: jitter.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+
     const cameraConstantSlider = document.getElementById('zoom');
     const cameraConstantValue = document.getElementById('zoom-value');
     const gammaSlider = document.getElementById('gamma');
@@ -80,7 +108,7 @@ async function main() {
         aspectRatio, cameraConstant, 0, 0,
         eye[0], eye[1], eye[2], 1,
         up[0],  up[1],  up[2],  0,
-        at[0],  at[1],  at[2],  0,
+        at[0],  at[1],  at[2],  1,
         gamma, 0
     ]);
 
@@ -97,6 +125,7 @@ async function main() {
         entries: [
             { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
             { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
         ]
     });
 
@@ -128,8 +157,30 @@ async function main() {
         entries: [
             { binding: 0, resource: { buffer: uniformBuffer } },
             { binding: 1, resource: texture.createView() },
+            { binding: 2, resource: { buffer: jitterBuffer } },
         ],
     });
+
+
+    subdivInc.addEventListener('click', () => {
+        subdivLevel = Math.min(subdivLevel + 1, 10);
+        subdivValue.textContent = subdivLevel;
+        updateJitterBuffer();
+        render();
+    });
+    subdivDec.addEventListener('click', () => {
+        subdivLevel = Math.max(subdivLevel - 1, 1);
+        subdivValue.textContent = subdivLevel;
+        updateJitterBuffer();
+        render();
+    });
+
+    function updateJitterBuffer() {
+        compute_jitters(jitter,1 / canvas.height , subdivLevel);
+        uniformData[15] = subdivLevel * subdivLevel * 2;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        device.queue.writeBuffer(jitterBuffer, 0, jitter);
+    }
 
 
     function render() {

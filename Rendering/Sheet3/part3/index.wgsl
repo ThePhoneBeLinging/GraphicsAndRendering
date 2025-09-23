@@ -79,30 +79,37 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     // Ray through the image plane located at distance 'cameraConstant'
     let origin = uniforms.eye;
-    let direction = normalize(-uniforms.cameraConstant * w
-                              + p.x * uniforms.aspectRatio * u
-                              + p.y * v);
 
-    var ray = Ray(origin, direction, 0, 1e5);
-    const maxDepth = 10;
-    const background_alpha = 1.0;
-    const background_color =  vec3f(0.1, 0.3, 0.6);
-    let color = Color(vec3f(0.0), vec3f(0.0), vec3f(0.0));
-    var hitInfo = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), color, 0u, 1.5, 0.0);
-    var result = vec3f(0.0);
-    for (var i = 0; i < maxDepth; i++) {
-        if (intersect_scene(&ray, &hitInfo)) {
-            result += shade(&ray, &hitInfo);
-        } else {
-            result += background_color;
-            break;
+    var resultPostJitter = vec3f(0.0);
+    let jitterVectorCount = u32(uniforms.jitterVectorCount);
+    for (var i = 0u; i < jitterVectorCount; i+=1) {
+        let jitter = jitters.data[i];
+        let direction = normalize(-uniforms.cameraConstant * w
+            + p.x * uniforms.aspectRatio * (u + jitter.x)
+            + p.y * (v + jitter.y));
+        var ray = Ray(origin, direction, 0, 1e5);
+        const maxDepth = 10;
+        const background_color =  vec3f(0.1, 0.3, 0.6);
+        let color = Color(vec3f(0.0), vec3f(0.0), vec3f(0.0));
+        var hitInfo = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), color, 0u, 1.5, 0.0);
+        var result = vec3f(0.0);
+        for (var i = 0; i < maxDepth; i++) {
+            if (intersect_scene(&ray, &hitInfo)) {
+                result += shade(&ray, &hitInfo);
+            } else {
+                result += background_color;
+                break;
+            }
+            if (hitInfo.has_hit)
+            {
+                break;
+            }
         }
-        if (hitInfo.has_hit)
-        {
-            break;
-        }
+        resultPostJitter += result;
     }
-    return vec4f(pow(result,vec3f(1.0/uniforms.gamma)), background_alpha);
+    resultPostJitter /= uniforms.jitterVectorCount;
+
+    return vec4f(pow(resultPostJitter,vec3f(1.0/uniforms.gamma)), 1.0);
 }
 
 fn texture_nearest(texture: texture_2d<f32>, texcoords: vec2f, repeat: bool) -> vec3f {
