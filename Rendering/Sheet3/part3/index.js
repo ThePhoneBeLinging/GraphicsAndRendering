@@ -103,22 +103,36 @@ async function main() {
     const at  = [0,0.5,0];
     const up  = [0,1,0];
 
-    // Pack uniforms (64 bytes)
-    const uniformData = new Float32Array([
-        aspectRatio, cameraConstant, 0, 0,
-        eye[0], eye[1], eye[2], 1,
-        up[0],  up[1],  up[2],  0,
-        at[0],  at[1],  at[2],  1,
-        gamma, 0
-    ]);
+    const uniformData = new Float32Array(20);
+    uniformData[0] = aspectRatio;
+    uniformData[1] = cameraConstant;
+    uniformData[2] = 0;
+    uniformData[3] = 0;
+    uniformData[4] = eye[0];
+    uniformData[5] = eye[1];
+    uniformData[6] = eye[2];
+    uniformData[7] = 1;             
+    uniformData[8] = up[0];
+    uniformData[9] = up[1];
+    uniformData[10] = up[2];
+    uniformData[11] = 0;
+    uniformData[12] = at[0];
+    uniformData[13] = at[1];
+    uniformData[14] = at[2];
+    uniformData[15] = 1;
+    uniformData[16] = gamma;
+    uniformData[17] = 0;
+    uniformData[18] = 0;
+    uniformData[19] = 0;
 
     const uniformBuffer = device.createBuffer({
-        size: 112,
+        size: 96,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true
     });
     new Float32Array(uniformBuffer.getMappedRange()).set(uniformData);
     uniformBuffer.unmap();
+
     const texture = await load_texture(device, 'grass.jpg');
 
     const bindGroupLayout = device.createBindGroupLayout({
@@ -176,10 +190,16 @@ async function main() {
     });
 
     function updateJitterBuffer() {
-        compute_jitters(jitter,1 / canvas.height , subdivLevel);
-        uniformData[15] = subdivLevel * subdivLevel * 2;
+        const pixelSizeNDC = 2 / canvas.height;
+        compute_jitters(jitter, pixelSizeNDC, subdivLevel);
+
+        const vecCount = subdivLevel * subdivLevel;
+        uniformData[15] = vecCount;
         device.queue.writeBuffer(uniformBuffer, 0, uniformData);
-        device.queue.writeBuffer(jitterBuffer, 0, jitter);
+
+        // Upload just what we filled (vecCount * 2 floats)
+        const byteLength = vecCount * 2 * 4;
+        device.queue.writeBuffer(jitterBuffer, 0, jitter, 0, byteLength / 4);
     }
 
 
@@ -219,10 +239,11 @@ async function main() {
 
     addEventListener("wheel", (event) => {
         cameraConstant *= 1.0 + 2.5e-4*event.deltaY;
-        uniformData[1] = cameraConstant; // update in-place
+        uniformData[1] = cameraConstant;
         requestAnimationFrame(animate);
     });
 
+    updateJitterBuffer();
     animate();
 }
 

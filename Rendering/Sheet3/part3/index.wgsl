@@ -90,8 +90,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     for (var i = 0u; i < jitterVectorCount; i+=1) {
         let jitter = jitters.data[i];
         let direction = normalize(-uniforms.cameraConstant * w
-            + p.x * uniforms.aspectRatio * (u + jitter.x)
-            + p.y * (v + jitter.y));
+            + (p.x + jitter.x) * uniforms.aspectRatio * u
+            + (p.y + jitter.y) * v);
         var ray = Ray(origin, direction, 0, 1e5);
         const maxDepth = 10;
         const background_color =  vec3f(0.1, 0.3, 0.6);
