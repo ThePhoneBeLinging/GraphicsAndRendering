@@ -1,10 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <style>
+        .top {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+        }
+        .left, .right {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+    </style>
     <meta charset="UTF-8">
     <title>Sheet3 - Part 4</title>
     <h1>Sheet3 - Part 4</h1>
-    <canvas height="960" width="1024"></canvas>
+    <div class="top">
+        <div class="left">
+            <canvas height="960" width="1024"></canvas>
+        </div>
+        <div class="right">
+            <h2> Answer to part 4:</h2>
+            <p> Texture aliasing becomes less and less noticable as the subdivision level increasest</p>
+            <p> Linear makes the image more blurred but reduces the jagged edges, whereas nearest does the opposite</p>
+        </div>
+    </div>
+
     <script src="../../../MV.js"></script>
     <script type="module" src="index.js"></script>
 

@@ -111,7 +111,7 @@ async function main() {
     uniformData[4] = eye[0];
     uniformData[5] = eye[1];
     uniformData[6] = eye[2];
-    uniformData[7] = 1;             
+    uniformData[7] = 1;
     uniformData[8] = up[0];
     uniformData[9] = up[1];
     uniformData[10] = up[2];
