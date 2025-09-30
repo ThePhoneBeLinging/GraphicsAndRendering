@@ -17,10 +17,11 @@ struct VertexOutput {
 fn vs(input : VertexInput) -> VertexOutput {
     var output : VertexOutput;
     output.position = uniforms.mvp * vec4f(input.position, 1.0);
+    output.color = 0.5 * input.position + vec3f(0.5, 0.5, 0.5);
     return output;
 }
 
 @fragment
 fn fs(input : VertexOutput) -> @location(0) vec4f {
-    return vec4f(0, 0, 0, 1);
+    return vec4f(input.color, 1.0);
 }

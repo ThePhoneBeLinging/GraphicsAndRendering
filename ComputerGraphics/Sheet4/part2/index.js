@@ -82,6 +82,18 @@ async function main() {
 
     function updateSubDiv()
     {
+        positions = [
+            vec3(0.0, 0.0, 1.0),
+            vec3(0.0, 2.0*M_SQRT2/3.0, -1.0/3.0),
+            vec3(-M_SQRT6/3.0, -M_SQRT2/3.0, -1.0/3.0),
+            vec3(M_SQRT6/3.0, -M_SQRT2/3.0, -1.0/3.0),
+        ];
+        newIndices = [
+            0, 1, 2,
+            0, 3, 1,
+            1, 3, 2,
+            0, 2, 3
+        ];
         for (let i = 0; i < subdivLevel; i++)
         {
             newIndices = subdivide_sphere(positions, newIndices);
@@ -105,7 +117,19 @@ async function main() {
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } }],
     });
+
+    const depthTexture = device.createTexture({
+        size: { width: canvas.width, height: canvas.height },
+        format: 'depth24plus',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
     const pipeline = device.createRenderPipeline({
+        depthStencil: {
+            depthWriteEnabled: true,
+            depthCompare: 'less',
+            format: 'depth24plus'
+        },
         layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
         vertex: {
             module,
@@ -120,7 +144,7 @@ async function main() {
             entryPoint: 'fs',
             targets: [{ format }],
         },
-        primitive: { topology: 'triangle-list', cullMode: 'none' },
+        primitive: { topology: 'triangle-list', frontFace: "ccw" ,cullMode: 'back' },
     });
 
     const uniformBuffers = [0].map(() =>
@@ -166,11 +190,17 @@ async function main() {
 
     const renderPass = {
         colorAttachments: [{
-            view: undefined,
             clearValue: { r: 0.3921, g: 0.5843, b: 0.9294, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',
         }],
+        depthStencilAttachment: {
+            view: depthTexture.createView(),
+            depthLoadOp: "clear",
+            depthClearValue: 1.0,
+            depthStoreOp: "store",
+
+        }
     };
 
     function subdivide_sphere(positions, indices)
@@ -205,7 +235,7 @@ async function main() {
         pass.setIndexBuffer(indexBuffer, 'uint32');
         for (let i = 0; i < 1; ++i) {
             pass.setBindGroup(0, bindGroups[i]);
-            pass.drawIndexed(newIndices.length);
+            pass.drawIndexed(indexData.length);
         }
 
         pass.end();
