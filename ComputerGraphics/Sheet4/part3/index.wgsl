@@ -17,19 +17,20 @@ struct VertexOutput {
 
 @vertex
 fn vs(input : VertexInput) -> VertexOutput {
+    let kd = 1.0;
+    let lightDir = normalize(vec3f(0.0, 0.0, -1.0));
+    let normal = normalize(input.position);
+
+    let diffuse = vec3f(kd * max(dot(normal, lightDir), 0.0));
+
     var output : VertexOutput;
     output.position = uniforms.mvp * vec4f(input.position, 1.0);
-    output.color = 0.5 * input.position + vec3f(0.5, 0.5, 0.5);
-    output.surfaceNormal = normalize(input.position);
+    output.color = diffuse;
+    output.surfaceNormal = normal;
     return output;
 }
 
 @fragment
 fn fs(input : VertexOutput) -> @location(0) vec4f {
-
-    let kd = 1.0;
-    let le = 1.0;
-    let pl = 1.0;
-    let ie = 1.0;
-    return vec4f(input.color * kd, 1.0);
+    return vec4f(input.color, 1.0);
 }
