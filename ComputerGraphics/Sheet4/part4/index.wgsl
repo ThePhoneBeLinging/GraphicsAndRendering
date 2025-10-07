@@ -35,7 +35,7 @@ fn vs(input : VertexInput) -> VertexOutput {
 
     let ambient = uniforms.la * uniforms.kd * sphereColor;
     let specular = lprs * specularColor;
-    let diffuse = vec3f(uniforms.kd * max(dot(normal, lightDir), 0.0)) * sphereColor;
+    let diffuse = vec3f(uniforms.kd * uniforms.le * max(dot(omegaR, omegaO), 0.0)) * sphereColor;
 
     var output : VertexOutput;
     output.position = uniforms.mvp * vec4f(input.position, 1.0);

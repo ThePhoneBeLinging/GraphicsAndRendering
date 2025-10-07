@@ -307,7 +307,7 @@ async function main() {
 
     function animate() {
         if (!orbiting) return;
-        angleAlpha += 0.1;
+        angleAlpha += 0.05;
         const eye = vec3(radius * Math.sin(angleAlpha), 0, radius * Math.cos(angleAlpha));
         const at  = vec3(0,0,0);
         const up  = vec3(0, 1, 0);
