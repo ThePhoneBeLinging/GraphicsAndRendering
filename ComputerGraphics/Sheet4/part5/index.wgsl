@@ -15,21 +15,34 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
-    @location(0) color: vec3<f32>,
-    @location(1) surfaceNormal: vec3<f32>,
+    @location(0) omegaR : vec3<f32>,
+    @location(1) omegaO : vec3<f32>,
+    @location(2) normal : vec3<f32>,
 };
 
 
 
 @vertex
 fn vs(input : VertexInput) -> VertexOutput {
+    var output : VertexOutput;
+    let normal = normalize(input.position);
+    let lightDir = normalize(vec3f(0.0, 0.0, -1.0));
+    output.position = uniforms.mvp * vec4f(input.position, 1.0);
+    output.omegaR = reflect(-lightDir, normal);
+    output.omegaO = normalize(uniforms.eyePos - input.position);
+    output.normal = normal;
+    return output;
+}
+
+@fragment
+fn fs(input : VertexOutput) -> @location(0) vec4f {
     let sphereColor = vec3f(1.0, 0.0, 0.0);
     let specularColor = vec3f(1.0, 1.0, 1.0);
-    let lightDir = normalize(vec3f(0.0, 0.0, -1.0));
-    let normal = normalize(input.position);
+    let normal = normalize(input.normal);
+    let omegaR = normalize(input.omegaR);
+    let omegaO = normalize(input.omegaO);
 
-    let omegaR = reflect(-lightDir, normal);
-    let omegaO = normalize(uniforms.eyePos - input.position);
+
     let lprs = uniforms.ks * uniforms.le * pow(max(dot(omegaR, omegaO),0), uniforms.s);
 
 
@@ -37,15 +50,7 @@ fn vs(input : VertexInput) -> VertexOutput {
     let specular = lprs * specularColor;
     let diffuse = vec3f(uniforms.kd * uniforms.le * max(dot(omegaR, omegaO), 0.0)) * sphereColor;
 
-    var output : VertexOutput;
-    output.position = uniforms.mvp * vec4f(input.position, 1.0);
-    output.color = diffuse + specular + ambient;
+    let color = ambient + diffuse + specular;
 
-    output.surfaceNormal = normal;
-    return output;
-}
-
-@fragment
-fn fs(input : VertexOutput) -> @location(0) vec4f {
-    return vec4f(input.color, 1.0);
+    return vec4f(color, 1.0);
 }
