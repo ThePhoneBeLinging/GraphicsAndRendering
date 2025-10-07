@@ -86,9 +86,41 @@ async function main() {
     const ksSlider = document.getElementById('ks-slider');
     const sSlider = document.getElementById('s-slider');
 
-    leSlider.addEventListener('click', (event) => {
-        
-    })
+    leSlider.addEventListener('input', () => {
+        leSliderValue = parseFloat(leSlider.value);
+        uniformValues[16] = leSliderValue;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+        render();
+    });
+
+    laSlider.addEventListener('input', () => {
+        laSliderValue = parseFloat(laSliderValue);
+        uniformValues[17] = laSliderValue;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+        render();
+    });
+
+    kdSlider.addEventListener('input', () => {
+        kdSliderValue = parseFloat(kdSlider.value);
+        uniformValues[18] = kdSliderValue;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+        render()
+    });
+
+    ksSlider.addEventListener('input', () => {
+        ksSliderValue = parseFloat(ksSlider.value);
+        uniformValues[19] = ksSliderValue;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+        render();
+    });
+
+    sSlider.addEventListener('input', () => {
+        sSliderValue = parseFloat(sSlider.value);
+        uniformValues[20] = sSliderValue;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+        render();
+    });
+
     for (let i = 0; i < subdivLevel; i++)
     {
         newIndices = subdivide_sphere(positions, newIndices);
@@ -175,19 +207,19 @@ async function main() {
         primitive: { topology: 'triangle-list', frontFace: "ccw" ,cullMode: 'back' },
     });
 
-    const uniformBuffers = [0].map(() =>
-        device.createBuffer({
-            size: sizeof['mat4'],
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        })
-    );
+    var uniformValues = new Float32Array(24);
 
-    const bindGroups = uniformBuffers.map(buf =>
+    const uniformBuffer =
+        device.createBuffer({
+            size: 112,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+    const bindGroup =
         device.createBindGroup({
             layout: pipeline.getBindGroupLayout(0),
-            entries: [{ binding: 0, resource: { buffer: buf } }],
-        })
-    );
+            entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+        });
 
     const aspect =
         (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
@@ -214,7 +246,12 @@ async function main() {
         mult(translate(0.0, 0.0, 0.0),
             mult(rotateX(-20), mult(rotateY(35), baseModel)));
 
-    device.queue.writeBuffer(uniformBuffers[0], 0, flatten(mvpFor(modelOnePoint)));
+    let flatModelOnePoint = flatten(mvpFor(modelOnePoint));
+    for (let i = 0; i < flatModelOnePoint.length; i++)
+    {
+        uniformValues[i] = flatModelOnePoint[i];
+    }
+    device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
     const renderPass = {
         colorAttachments: [{
@@ -261,10 +298,8 @@ async function main() {
         pass.setPipeline(pipeline);
         pass.setVertexBuffer(0, vertexBuffer);
         pass.setIndexBuffer(indexBuffer, 'uint32');
-        for (let i = 0; i < 1; ++i) {
-            pass.setBindGroup(0, bindGroups[i]);
-            pass.drawIndexed(indexData.length);
-        }
+        pass.setBindGroup(0, bindGroup);
+        pass.drawIndexed(indexData.length);
 
         pass.end();
         device.queue.submit([encoder.finish()]);
@@ -283,8 +318,12 @@ async function main() {
         const modelOnePoint =
             mult(translate(0.0, 0.0, 0.0),
                 mult(rotateX(-20), mult(rotateY(35), baseModel)));
-
-        device.queue.writeBuffer(uniformBuffers[0], 0, flatten(mvpFor(modelOnePoint)));
+        let flatModelOnePoint = flatten(mvpFor(modelOnePoint));
+        for (let i = 0; i < flatModelOnePoint.length; i++)
+        {
+            uniformValues[i] = flatModelOnePoint[i];
+        }
+        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
         render();
         requestAnimationFrame(animate)
     }

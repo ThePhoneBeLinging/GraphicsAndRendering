@@ -4,7 +4,7 @@ struct Uniforms {
     la : f32,
     kd : f32,
     ks : f32,
-    s : f32
+    s : f32,
     _pad0: vec3f
 };
 @group(0) @binding(0) var<uniform> uniforms : Uniforms;
@@ -23,7 +23,7 @@ struct VertexOutput {
 
 @vertex
 fn vs(input : VertexInput) -> VertexOutput {
-    let kd = 1.0;
+    let kd = uniforms.kd;
     let lightDir = normalize(vec3f(0.0, 0.0, -1.0));
     let normal = normalize(input.position);
 
