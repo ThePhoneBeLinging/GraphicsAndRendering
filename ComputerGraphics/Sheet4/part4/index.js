@@ -323,11 +323,24 @@ async function main() {
         {
             uniformValues[i] = flatModelOnePoint[i];
         }
+        uniformValues[21] = eye.x;
+        uniformValues[22] = eye.y;
+        uniformValues[23] = eye.z;
         device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
         render();
         requestAnimationFrame(animate)
     }
-
+    leSliderValue = parseFloat(leSlider.value);
+    uniformValues[16] = leSliderValue;
+    laSliderValue = parseFloat(laSliderValue);
+    uniformValues[17] = laSliderValue;
+    kdSliderValue = parseFloat(kdSlider.value);
+    uniformValues[18] = kdSliderValue;
+    ksSliderValue = parseFloat(ksSlider.value);
+    uniformValues[19] = ksSliderValue;
+    sSliderValue = parseFloat(sSlider.value);
+    uniformValues[20] = sSliderValue;
+    device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
     render();
 }
 

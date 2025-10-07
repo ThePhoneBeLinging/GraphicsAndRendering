@@ -5,7 +5,7 @@ struct Uniforms {
     kd : f32,
     ks : f32,
     s : f32,
-    _pad0: vec3f
+    eyePos: vec3f,
 };
 @group(0) @binding(0) var<uniform> uniforms : Uniforms;
 
@@ -23,15 +23,24 @@ struct VertexOutput {
 
 @vertex
 fn vs(input : VertexInput) -> VertexOutput {
-    let kd = uniforms.kd;
+    let sphereColor = vec3f(1.0, 0.0, 0.0);
+    let specularColor = vec3f(1.0, 1.0, 1.0);
     let lightDir = normalize(vec3f(0.0, 0.0, -1.0));
     let normal = normalize(input.position);
 
-    let diffuse = vec3f(kd * max(dot(normal, lightDir), 0.0));
+    let omegaR = reflect(-lightDir, normal);
+    let omegaO = normalize(uniforms.eyePos - input.position);
+    let lprs = uniforms.ks * uniforms.le * pow(max(dot(omegaR, omegaO),0), uniforms.s);
+
+
+    let ambient = uniforms.la * uniforms.kd * sphereColor;
+    let specular = lprs * specularColor;
+    let diffuse = vec3f(uniforms.kd * max(dot(normal, lightDir), 0.0)) * sphereColor;
 
     var output : VertexOutput;
     output.position = uniforms.mvp * vec4f(input.position, 1.0);
-    output.color = diffuse;
+    output.color = diffuse + specular + ambient;
+
     output.surfaceNormal = normal;
     return output;
 }
