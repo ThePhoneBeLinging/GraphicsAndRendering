@@ -60,6 +60,7 @@ var<uniform> uniforms: Uniforms;
 @group(0) @binding(2) var<storage, read> jitters: JitterBuffer;
 @group(0) @binding(3) var<storage, read> vPositions: array<vec3f>;
 @group(0) @binding(4) var<storage, read> meshFaces: array<vec3u>;
+@group(0) @binding(5) var<storage, read> vNormals: array<vec3f>;
 
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
@@ -389,9 +390,17 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
     let t = f * dot(edge2, q);
     if (t > ray.tmin && t < ray.tmax) {
         let position = ray.origin + ray.direction * t;
-        let normal = normalize(cross(edge1, edge2));
+        
+        let n0 = vNormals[i0];
+        let n1 = vNormals[i1];
+        let n2 = vNormals[i2];
+        
+        let w = 1.0 - u - v;
+        
+        let interpolated_normal = normalize(w * n0 + u * n1 + v * n2);
+        
         let colorAsDiffuse = Color(color * 0.1, color * 0.9, vec3f(0.0));
-        return HitInfo(true, t, position, normal, colorAsDiffuse, shader, index_of_refraction, shinyness);
+        return HitInfo(true, t, position, interpolated_normal, colorAsDiffuse, shader, index_of_refraction, shinyness);
     }
     
     return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);

@@ -48,6 +48,12 @@ async function main() {
     });
     device.queue.writeBuffer(positionBuffer, 0, obj.vertices);
 
+    const normalBuffer = device.createBuffer({
+        size: obj.normals.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+    device.queue.writeBuffer(normalBuffer, 0, obj.normals);
+
     const indexBuffer = device.createBuffer({
         size: obj.indices.byteLength,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
@@ -163,6 +169,7 @@ async function main() {
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
             { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
             { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 5, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
         ]
     });
 
@@ -197,6 +204,7 @@ async function main() {
             { binding: 2, resource: { buffer: jitterBuffer } },
             { binding: 3, resource: { buffer: positionBuffer } },
             { binding: 4, resource: { buffer: indexBuffer } },
+            { binding: 5, resource: { buffer: normalBuffer } },
         ],
     });
 
