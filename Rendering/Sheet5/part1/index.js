@@ -38,6 +38,22 @@ async function main() {
         }
     }
 
+    // Load triangle mesh
+    const obj_filename = '../objects/triangle.obj';
+    const obj = await readOBJFile(obj_filename, 1, true);
+
+    const positionBuffer = device.createBuffer({
+        size: obj.vertices.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+    device.queue.writeBuffer(positionBuffer, 0, obj.vertices);
+
+    const indexBuffer = device.createBuffer({
+        size: obj.indices.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+    device.queue.writeBuffer(indexBuffer, 0, obj.indices);
+
     let subdivLevel = 1;
     const subdivValue = document.getElementById('subdiv-value');
     const subdivInc = document.getElementById('subdiv-inc');
@@ -145,6 +161,8 @@ async function main() {
             { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
             { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
         ]
     });
 
@@ -177,6 +195,8 @@ async function main() {
             { binding: 0, resource: { buffer: uniformBuffer } },
             { binding: 1, resource: texture.createView() },
             { binding: 2, resource: { buffer: jitterBuffer } },
+            { binding: 3, resource: { buffer: positionBuffer } },
+            { binding: 4, resource: { buffer: indexBuffer } },
         ],
     });
 

@@ -58,12 +58,13 @@ struct JitterBuffer {
 var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var my_texture: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read> jitters: JitterBuffer;
+@group(0) @binding(3) var<storage, read> vPositions: array<vec3f>;
+@group(0) @binding(4) var<storage, read> meshFaces: array<vec3u>;
 
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
     @location(0) imagePlanePos : vec2<f32>,
 };
-
 
 @vertex
 fn vs_main(@location(0) pos: vec2<f32>) -> VertexOutput {
@@ -187,14 +188,6 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
     const plane_index_of_refraction = 1.5;
     const plane_onb = Onb(vec3f(-1.0, 0.0, 0.0), vec3f(0.0, 0.0, 1.0), vec3f(0.0, 1.0, 0.0));
 
-    const triangle_v0 = vec3f(-0.2, 0.1, 0.9);
-    const triangle_v1 = vec3f( 0.2, 0.1, 0.9);
-    const triangle_v2 = vec3f(-0.2, 0.1,-0.1);
-    const triangle_color = vec3f(0.4, 0.3, 0.2);
-    const triangle_shinyness = 1;
-    const triangle_shader = 2u;
-    const triangle_index_of_refraction = 1.5;
-
     const sphere_c = vec3f(0.0, 0.5, 0.0);
     const sphere_r = 0.3;
     const sphere_color = vec3f(0, 0, 0);
@@ -221,11 +214,14 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
         found = true;
     }
 
-    let th = ray_triangle_intersection(*ray, triangle_v0, triangle_v1, triangle_v2, triangle_color, triangle_shader, triangle_shinyness, triangle_index_of_refraction);
-    if (th.has_hit && th.dist < closest_t && th.dist > (*ray).tmin) {
-        best = th;
-        closest_t = th.dist;
-        found = true;
+    let num_faces = arrayLength(&meshFaces);
+    for (var face_idx = 0u; face_idx < num_faces; face_idx += 1u) {
+        let th = intersect_triangle(*ray, face_idx);
+        if (th.has_hit && th.dist < closest_t && th.dist > (*ray).tmin) {
+            best = th;
+            closest_t = th.dist;
+            found = true;
+        }
     }
 
     if (found) {
@@ -369,6 +365,54 @@ fn ray_plane_intersect(ray: Ray, planePoint: vec3f, onb: Onb, color: vec3f, shad
     return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);
 }
 
+
+fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
+    let face = meshFaces[face_index];
+    let i0 = face.x;
+    let i1 = face.y;
+    let i2 = face.z;
+    
+    let v0 = vPositions[i0];
+    let v1 = vPositions[i1];
+    let v2 = vPositions[i2];
+    
+    let color = vec3f(0.4, 0.3, 0.2);
+    let shader = 2u;
+    let shinyness = 1.0;
+    let index_of_refraction = 1.5;
+    
+    let edge1 = v1 - v0;
+    let edge2 = v2 - v0;
+    let h = cross(ray.direction, edge2);
+    let a = dot(edge1, h);
+    
+    if (abs(a) < 0.0001) {
+        return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);
+    }
+
+    let f = 1.0 / a;
+    let s = ray.origin - v0;
+    let u = f * dot(s, h);
+    if (u < 0.0 || u > 1.0) {
+        return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);
+    }
+
+    let q = cross(s, edge1);
+    let v = f * dot(ray.direction, q);
+    if (v < 0.0 || u + v > 1.0) {
+        return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);
+    }
+
+    let t = f * dot(edge2, q);
+    if (t > ray.tmin && t < ray.tmax) {
+        let position = ray.origin + ray.direction * t;
+        let normal = normalize(cross(edge1, edge2));
+        let colorAsDiffuse = Color(color * 0.1, color * 0.9, vec3f(0.0));
+        return HitInfo(true, t, position, normal, colorAsDiffuse, shader, index_of_refraction, shinyness);
+    }
+    
+    return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);
+}
 
 fn ray_triangle_intersection(ray: Ray, v0: vec3f, v1: vec3f, v2: vec3f, color: vec3f, shader: u32, shinyness: f32, index_of_refraction: f32) -> HitInfo {
     let edge1 = v1 - v0;
