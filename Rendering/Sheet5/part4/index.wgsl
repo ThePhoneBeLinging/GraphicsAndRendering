@@ -54,6 +54,11 @@ struct JitterBuffer {
     data: array<vec2f>,
 };
 
+struct Material {
+    emission: vec3f,
+    diffuse: vec3f,
+};
+
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var my_texture: texture_2d<f32>;
@@ -61,6 +66,8 @@ var<uniform> uniforms: Uniforms;
 @group(0) @binding(3) var<storage, read> vPositions: array<vec3f>;
 @group(0) @binding(4) var<storage, read> meshFaces: array<vec3u>;
 @group(0) @binding(5) var<storage, read> vNormals: array<vec3f>;
+@group(0) @binding(6) var<storage, read> materials: array<Material>;
+@group(0) @binding(7) var<storage, read> matIndices: array<u32>;
 
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
@@ -181,25 +188,10 @@ fn texture_linear(tex: texture_2d<f32>, clip: vec2f, repeat: bool) -> vec3f {
 }
 
 fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> bool {
-    const plane_point  = vec3f(0.0, 0.0, 0.0);
-    const plane_normal = vec3f(0.0, 1.0, 0.0);
-    const plane_color  = vec3f(0.1, 0.7, 0.0);
-    const plane_shinyness = 0;
-    const plane_shader = 0u;
-    const plane_index_of_refraction = 1.5;
-    const plane_onb = Onb(vec3f(-1.0, 0.0, 0.0), vec3f(0.0, 0.0, 1.0), vec3f(0.0, 1.0, 0.0));
-
     var closest_t = (*ray).tmax;
     var found = false;
     let color = Color(vec3f(0.0), vec3f(0.0), vec3f(0.0));
     var best = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), color, 0u, 0.0, 0.0);
-
-    let ph = ray_plane_intersect(*ray, plane_point, plane_onb, plane_color, plane_shader, plane_shinyness, plane_index_of_refraction);
-    if (ph.has_hit && ph.dist < closest_t && ph.dist > (*ray).tmin) {
-        best = ph;
-        closest_t = ph.dist;
-        found = true;
-    }
 
     let num_faces = arrayLength(&meshFaces);
     for (var face_idx = 0u; face_idx < num_faces; face_idx += 1u) {
@@ -360,7 +352,11 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
     let v1 = vPositions[i1];
     let v2 = vPositions[i2];
     
-    let color = vec3f(0.9);  // Set teapot color to vec3f(0.9) as required
+    let material_index = matIndices[face_index];
+    let material = materials[material_index];
+    
+    let color = material.emission.xyz + material.diffuse.xyz;
+    
     let shader = 2u;
     let shinyness = 1.0;
     let index_of_refraction = 1.5;
@@ -391,16 +387,10 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
     if (t > ray.tmin && t < ray.tmax) {
         let position = ray.origin + ray.direction * t;
         
-        let n0 = vNormals[i0];
-        let n1 = vNormals[i1];
-        let n2 = vNormals[i2];
-        
-        let w = 1.0 - u - v;
-        
-        let interpolated_normal = normalize(w * n0 + u * n1 + v * n2);
+        let face_normal = normalize(cross(edge1, edge2));
         
         let colorAsDiffuse = Color(color * 0.1, color * 0.9, vec3f(0.0));
-        return HitInfo(true, t, position, interpolated_normal, colorAsDiffuse, shader, index_of_refraction, shinyness);
+        return HitInfo(true, t, position, face_normal, colorAsDiffuse, shader, index_of_refraction, shinyness);
     }
     
     return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);

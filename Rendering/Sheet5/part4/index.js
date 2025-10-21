@@ -38,8 +38,8 @@ async function main() {
         }
     }
 
-    // Load teapot mesh
-    const obj_filename = '../objects/teapot.obj';
+    // Load Cornell box mesh
+    const obj_filename = '../objects/CornellBoxWithBlocks.obj';
     const obj = await readOBJFile(obj_filename, 1, true);
 
     const positionBuffer = device.createBuffer({
@@ -59,6 +59,28 @@ async function main() {
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
     device.queue.writeBuffer(indexBuffer, 0, obj.indices);
+
+    let mat_bytelength = obj.materials.length*2*sizeof['vec4'];
+    var materials = new ArrayBuffer(mat_bytelength);
+    const materialBuffer = device.createBuffer({
+        size: mat_bytelength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
+    });
+
+    for(var i = 0; i < obj.materials.length; ++i) {
+        const mat = obj.materials[i];
+        const emission = vec4(mat.emission.r, mat.emission.g, mat.emission.b, 0.0);
+        const color = vec4(mat.color.r, mat.color.g, mat.color.b, 0.0);
+        new Float32Array(materials, i*2*sizeof['vec4'], 8).set([...emission, ...color]);
+    }
+    device.queue.writeBuffer(materialBuffer, 0, materials);
+
+    const matidxBuffer = device.createBuffer({
+        size: obj.mat_indices.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+
+    device.queue.writeBuffer(matidxBuffer, 0, obj.mat_indices);
 
     let subdivLevel = 1;
     const subdivValue = document.getElementById('subdiv-value');
@@ -87,7 +109,7 @@ async function main() {
     var cameraConstant = parseFloat(cameraConstantValue.value);
     var gamma = parseFloat(gammaValue.value);
     gamma = 2.4;
-    cameraConstant = 2.5;  // Set camera constant to 2.5 as required
+    cameraConstant = 1.0;  // Set camera constant to 1.0 as required for Cornell box
 
     cameraConstantSlider.addEventListener('input', () => {
         cameraConstant = parseFloat(cameraConstantSlider.value);
@@ -126,8 +148,8 @@ async function main() {
         render();
     });
 
-    const eye = [0.15, 1.5, 10.0];
-    const at = [0.15, 1.5, 0.0];
+    const eye = [277.0, 275.0, -570.0];
+    const at = [277.0, 275.0, 0.0];
     const up = [0.0, 1.0, 0.0];
 
     const uniformData = new Float32Array(20);
@@ -170,7 +192,9 @@ async function main() {
             { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
             { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
             { binding: 5, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        ]
+            { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
+        ],
     });
 
     const pipeline = device.createRenderPipeline({
@@ -205,6 +229,8 @@ async function main() {
             { binding: 3, resource: { buffer: positionBuffer } },
             { binding: 4, resource: { buffer: indexBuffer } },
             { binding: 5, resource: { buffer: normalBuffer } },
+            { binding: 6, resource: { buffer: materialBuffer } },
+            { binding: 7, resource: { buffer: matidxBuffer } }
         ],
     });
 
