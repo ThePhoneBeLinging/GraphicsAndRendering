@@ -188,13 +188,6 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
     const plane_index_of_refraction = 1.5;
     const plane_onb = Onb(vec3f(-1.0, 0.0, 0.0), vec3f(0.0, 0.0, 1.0), vec3f(0.0, 1.0, 0.0));
 
-    const sphere_c = vec3f(0.0, 0.5, 0.0);
-    const sphere_r = 0.3;
-    const sphere_color = vec3f(0, 0, 0);
-    const sphere_shinyness = 42;
-    const sphere_shader = 5u;
-    const sphere_index_of_refraction = 1.5;
-
     var closest_t = (*ray).tmax;
     var found = false;
     let color = Color(vec3f(0.0), vec3f(0.0), vec3f(0.0));
@@ -204,13 +197,6 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
     if (ph.has_hit && ph.dist < closest_t && ph.dist > (*ray).tmin) {
         best = ph;
         closest_t = ph.dist;
-        found = true;
-    }
-
-    let sh = ray_sphere_intersection(*ray, sphere_c, sphere_r, sphere_color, sphere_shader, sphere_shinyness, sphere_index_of_refraction);
-    if (sh.has_hit && sh.dist < closest_t && sh.dist > (*ray).tmin) {
-        best = sh;
-        closest_t = sh.dist;
         found = true;
     }
 
@@ -232,26 +218,23 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
 }
 
 
-fn sample_point_light(p: vec3f) -> Light {
-    let PI = 3.14159265359;
-    let light_pos = vec3f(0.0, 1.0, 0.0);
-    let intensity = vec3f(PI);
-
-    let toL = light_pos - p;
-    let d2 = max(dot(toL, toL), 1e-6);
-    let d = sqrt(d2);
-    let wi = toL / d;
-
-    let Li = intensity * uniforms.gamma / d2;
-
-    let rayFromPoint = light_pos - p;
-
-    return Light(Li, wi, d, rayFromPoint);
+fn sample_directional_light(p: vec3f) -> Light {
+    const PI = 3.14159265359;
+    
+    let light_direction = normalize(vec3f(-1.0));
+    let wi = -light_direction;
+    let Le = vec3f(PI, PI, PI);
+    
+    let dist = 1e5;
+    
+    let rayFromPoint = -light_direction * dist;
+    
+    return Light(Le, wi, dist, rayFromPoint);
 }
 
 fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
     const PI = 3.14159265359;
-    let light = sample_point_light((*hitInfo).position);
+    let light = sample_directional_light((*hitInfo).position);
 
     var shadowRay = Ray(hitInfo.position + 1e-4 * hitInfo.normal, light.rayFromPoint, 0, 1e5);
     var shadowHitInfo = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), 0,0,0);
@@ -376,7 +359,7 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
     let v1 = vPositions[i1];
     let v2 = vPositions[i2];
     
-    let color = vec3f(0.4, 0.3, 0.2);
+    let color = vec3f(0.9);  // Set teapot color to vec3f(0.9) as required
     let shader = 2u;
     let shinyness = 1.0;
     let index_of_refraction = 1.5;

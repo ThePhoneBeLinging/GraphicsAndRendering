@@ -38,8 +38,8 @@ async function main() {
         }
     }
 
-    // Load triangle mesh
-    const obj_filename = '../objects/triangle.obj';
+    // Load teapot mesh
+    const obj_filename = '../objects/teapot.obj';
     const obj = await readOBJFile(obj_filename, 1, true);
 
     const positionBuffer = device.createBuffer({
@@ -81,7 +81,7 @@ async function main() {
     var cameraConstant = parseFloat(cameraConstantValue.value);
     var gamma = parseFloat(gammaValue.value);
     gamma = 2.4;
-    cameraConstant = 2.0;
+    cameraConstant = 2.5;  // Set camera constant to 2.5 as required
 
     cameraConstantSlider.addEventListener('input', () => {
         cameraConstant = parseFloat(cameraConstantSlider.value);
@@ -120,9 +120,9 @@ async function main() {
         render();
     });
 
-    const eye = [2,1.5,2];
-    const at  = [0,0.5,0];
-    const up  = [0,1,0];
+    const eye = [0.15, 1.5, 10.0];
+    const at = [0.15, 1.5, 0.0];
+    const up = [0.0, 1.0, 0.0];
 
     const uniformData = new Float32Array(20);
     uniformData[0] = aspectRatio;
