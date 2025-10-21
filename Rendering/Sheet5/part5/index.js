@@ -69,7 +69,6 @@ async function main() {
 
     for(var i = 0; i < obj.materials.length; ++i) {
         const mat = obj.materials[i];
-        // Pack as vec4 for proper alignment - emission (xyz + padding), diffuse (xyz + padding)
         const emission = vec4(mat.emission.r, mat.emission.g, mat.emission.b, 0.0);
         const color = vec4(mat.color.r, mat.color.g, mat.color.b, 0.0);
         new Float32Array(materials, i*2*sizeof['vec4'], 8).set([...emission, ...color]);
@@ -83,7 +82,6 @@ async function main() {
 
     device.queue.writeBuffer(matidxBuffer, 0, obj.mat_indices);
 
-    // Add light indices buffer for emissive triangles
     const lightIndicesBuffer = device.createBuffer({
         size: obj.light_indices.byteLength,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
@@ -117,7 +115,7 @@ async function main() {
     var cameraConstant = parseFloat(cameraConstantValue.value);
     var gamma = parseFloat(gammaValue.value);
     gamma = 2.4;
-    cameraConstant = 1.0;  // Set camera constant to 1.0 as required for Cornell box
+    cameraConstant = 1.0;
 
     cameraConstantSlider.addEventListener('input', () => {
         cameraConstant = parseFloat(cameraConstantSlider.value);

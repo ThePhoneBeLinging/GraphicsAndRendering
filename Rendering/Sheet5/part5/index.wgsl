@@ -212,27 +212,20 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
 }
 
 
-fn sample_area_light(p: vec3f) -> Light {
+fn sample_area_light(p: vec3f, surface_normal: vec3f) -> Light {
     const PI = 3.14159265359;
     
-    // Get number of light sources
     let num_lights = arrayLength(&lightIndices);
     if (num_lights == 0u) {
-        // Fallback to directional light if no area lights
-        let light_direction = normalize(vec3f(-1.0));
-        let wi = -light_direction;
-        let Le = vec3f(PI, PI, PI);
-        let dist = 1e5;
-        let rayFromPoint = -light_direction * dist;
-        return Light(Le, wi, dist, rayFromPoint);
+        return Light(vec3f(0.0), vec3f(0.0, 1.0, 0.0), 1e5, vec3f(0.0));
     }
     
     var total_radiance = vec3f(0.0);
-    var total_wi = vec3f(0.0);
+    var avg_direction = vec3f(0.0);
     var closest_distance = 1e5;
     var best_light_vector = vec3f(0.0);
+    var total_weight = 0.0;
     
-    // Sample all light sources and accumulate their contributions
     for (var light_idx = 0u; light_idx < num_lights; light_idx += 1u) {
         let light_face_idx = lightIndices[light_idx];
         let face = meshFaces[light_face_idx];
@@ -241,40 +234,35 @@ fn sample_area_light(p: vec3f) -> Light {
         let v1 = vPositions[face.y];
         let v2 = vPositions[face.z];
         
-        // Sample center of triangle (can be extended for Monte Carlo sampling)
-        let light_position = (v0 + v1 + v2) / 3.0;
+        let light_center = (v0 + v1 + v2) / 3.0;
         
-        // Calculate triangle area and normal
         let edge1 = v1 - v0;
         let edge2 = v2 - v0;
         let triangle_normal = normalize(cross(edge1, edge2));
         let area = 0.5 * length(cross(edge1, edge2));
         
-        // Vector from hit point to light
-        let light_vector = light_position - p;
+        let light_vector = light_center - p;
         let distance = length(light_vector);
         let wi = normalize(light_vector);
         
-        // Get emission from material
         let material_index = matIndices[light_face_idx];
         let material = materials[material_index];
-        let emission = material.emission.xyz;
+        let Le = material.emission.xyz;
         
-        // Skip if no emission
-        if (length(emission) < 0.001) {
+        if (length(Le) < 0.001) {
             continue;
         }
         
-        // Calculate angle between light normal and direction to hit point
-        let cos_light = max(dot(-wi, triangle_normal), 0.0);
+        let cos_theta_i = max(dot(surface_normal, wi), 0.0);
         
-        // Only consider lights facing the hit point
-        if (cos_light > 0.0) {
-            // Calculate radiance using area light equation:
-            // L = Le * cos(θ_light) * area / distance²
-            let radiance = emission * cos_light * area / (distance * distance);
-            total_radiance += radiance;
-            total_wi += wi * length(radiance);
+        let cos_theta_e = max(dot(-wi, triangle_normal), 0.0);
+        
+        if (cos_theta_i > 0.0 && cos_theta_e > 0.0) {
+            let irradiance = Le * cos_theta_e * area / (distance * distance);
+            
+            total_radiance += irradiance;
+            avg_direction += wi * length(irradiance);
+            total_weight += length(irradiance);
             
             if (distance < closest_distance) {
                 closest_distance = distance;
@@ -283,16 +271,9 @@ fn sample_area_light(p: vec3f) -> Light {
         }
     }
     
-    // Normalize the accumulated direction
-    if (length(total_wi) > 0.0) {
-        total_wi = normalize(total_wi);
-    } else {
-        // Fallback if no valid lights
-        total_wi = vec3f(0.0, 1.0, 0.0);
-        total_radiance = vec3f(0.1);
-    }
+    avg_direction = normalize(avg_direction);
     
-    return Light(total_radiance, total_wi, closest_distance, best_light_vector);
+    return Light(total_radiance, avg_direction, closest_distance, best_light_vector);
 }
 
 fn sample_directional_light(p: vec3f) -> Light {
@@ -311,21 +292,16 @@ fn sample_directional_light(p: vec3f) -> Light {
 
 fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
     const PI = 3.14159265359;
-    let light = sample_area_light((*hitInfo).position);
-
-    var shadowRay = Ray(hitInfo.position + 1e-4 * hitInfo.normal, normalize(light.rayFromPoint), 0, light.dist - 1e-3);
+    
+    let surface_normal = normalize((*hitInfo).normal);
+    let light = sample_area_light((*hitInfo).position, surface_normal);
+    
+    var shadowRay = Ray(hitInfo.position + 1e-4 * surface_normal, normalize(light.rayFromPoint), 0, light.dist - 1e-3);
     var shadowHitInfo = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), 0,0,0);
-    var inShadow = intersect_scene(&shadowRay, &shadowHitInfo);
+    let visibility = select(1.0, 0.0, intersect_scene(&shadowRay, &shadowHitInfo));
 
-
-    switch (hitInfo.shader)
-    {
-        case 0u: { // Plane
-
-            break;
-        }
+    switch (hitInfo.shader) {
         case 1u: { // Sphere
-
             let normalizedNormal = normalize((*hitInfo).normal);
             let normailzedDirection = normalize(ray.direction);
             if (dot(normalizedNormal, normailzedDirection) < 0.0) {
@@ -334,14 +310,10 @@ fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
                 (*hitInfo).indexOfRefraction =  (*hitInfo).indexOfRefraction / 1.0;
                 (*hitInfo).normal = -(*hitInfo).normal;
             }
-
             let refractedRayDirection = refract(ray.direction, (*hitInfo).normal, (*hitInfo).indexOfRefraction);
             *ray = Ray((*hitInfo).position - 1e-4 * (*hitInfo).normal, refractedRayDirection, 0, 1e5);
             (*hitInfo).has_hit = false;
             return vec3f(0.0);
-        }
-        case 2u: { // Triangle
-            break;
         }
         case 3u: { // Mirror
             let reflectedRayDirection = reflect(ray.direction, (*hitInfo).normal);
@@ -355,45 +327,20 @@ fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
             let spec = pow(max(dot(viewDir, reflectDir), 0.0), (*hitInfo).shininess);
             let specular = (*hitInfo).color.specular * spec * ((*hitInfo).shininess + 2) / (2*PI);
             (*hitInfo).color.diffuse += specular;
-            // (*hitInfo).color.diffuse *= light.L_i * ((*ray).direction * (*hitInfo).normal);
-            break;
-        }
-        case 5u: { // Glossy (Refracted X Phong)
-            let normalizedNormal = normalize((*hitInfo).normal);
-            let normailzedDirection = normalize(ray.direction);
-            if (dot(normalizedNormal, normailzedDirection) < 0.0) {
-                (*hitInfo).indexOfRefraction = 1.0 / (*hitInfo).indexOfRefraction;
-            } else {
-                (*hitInfo).indexOfRefraction =  (*hitInfo).indexOfRefraction / 1.0;
-                (*hitInfo).normal = -(*hitInfo).normal;
-            }
-
-            let refractedRayDirection = refract(ray.direction, (*hitInfo).normal, (*hitInfo).indexOfRefraction);
-            *ray = Ray((*hitInfo).position - 1e-4 * (*hitInfo).normal, refractedRayDirection, 0, 1e5);
-            (*hitInfo).has_hit = false;
-
-            let viewDir = normalize(-ray.direction);
-            let reflectDir = reflect(-light.w_i, (*hitInfo).normal);
-            let spec = pow(max(dot(viewDir, reflectDir), 0.0), (*hitInfo).shininess);
-            let specular = (*hitInfo).color.specular * spec * ((*hitInfo).shininess + 2) / (2*PI);
-            (*hitInfo).color.diffuse += specular;
-            // (*hitInfo).color.diffuse *= light.L_i * ((*ray).direction * (*hitInfo).normal);
-            break;
         }
         default: {
             break;
         }
     }
-    let n = normalize((*hitInfo).normal);
-    let hitColor = (*hitInfo).color;
-
-    var finalColor = vec3f(0.0);
     
-    if (!inShadow) {
-        let ndotl = max(dot(n, light.w_i), 0.0);
-        // Lambert: Lo = (albedo/π) * Li * cosθ
-        let direct_lighting = (hitColor.diffuse / PI) * light.L_i * ndotl;
-        finalColor += direct_lighting;
+    let hitColor = (*hitInfo).color;
+    
+    var finalColor = hitColor.ambient;
+    
+    if (visibility > 0.0) {
+        let cos_theta_i = max(dot(surface_normal, light.w_i), 0.0);
+        let fr = hitColor.diffuse / PI;
+        finalColor += fr * light.L_i * cos_theta_i * visibility;
     }
 
     return finalColor;
