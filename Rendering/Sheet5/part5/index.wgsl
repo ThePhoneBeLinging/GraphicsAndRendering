@@ -68,6 +68,7 @@ var<uniform> uniforms: Uniforms;
 @group(0) @binding(5) var<storage, read> vNormals: array<vec3f>;
 @group(0) @binding(6) var<storage, read> materials: array<Material>;
 @group(0) @binding(7) var<storage, read> matIndices: array<u32>;
+@group(0) @binding(8) var<storage, read> lightIndices: array<u32>;
 
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
@@ -211,6 +212,89 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
 }
 
 
+fn sample_area_light(p: vec3f) -> Light {
+    const PI = 3.14159265359;
+    
+    // Get number of light sources
+    let num_lights = arrayLength(&lightIndices);
+    if (num_lights == 0u) {
+        // Fallback to directional light if no area lights
+        let light_direction = normalize(vec3f(-1.0));
+        let wi = -light_direction;
+        let Le = vec3f(PI, PI, PI);
+        let dist = 1e5;
+        let rayFromPoint = -light_direction * dist;
+        return Light(Le, wi, dist, rayFromPoint);
+    }
+    
+    var total_radiance = vec3f(0.0);
+    var total_wi = vec3f(0.0);
+    var closest_distance = 1e5;
+    var best_light_vector = vec3f(0.0);
+    
+    // Sample all light sources and accumulate their contributions
+    for (var light_idx = 0u; light_idx < num_lights; light_idx += 1u) {
+        let light_face_idx = lightIndices[light_idx];
+        let face = meshFaces[light_face_idx];
+        
+        let v0 = vPositions[face.x];
+        let v1 = vPositions[face.y];
+        let v2 = vPositions[face.z];
+        
+        // Sample center of triangle (can be extended for Monte Carlo sampling)
+        let light_position = (v0 + v1 + v2) / 3.0;
+        
+        // Calculate triangle area and normal
+        let edge1 = v1 - v0;
+        let edge2 = v2 - v0;
+        let triangle_normal = normalize(cross(edge1, edge2));
+        let area = 0.5 * length(cross(edge1, edge2));
+        
+        // Vector from hit point to light
+        let light_vector = light_position - p;
+        let distance = length(light_vector);
+        let wi = normalize(light_vector);
+        
+        // Get emission from material
+        let material_index = matIndices[light_face_idx];
+        let material = materials[material_index];
+        let emission = material.emission.xyz;
+        
+        // Skip if no emission
+        if (length(emission) < 0.001) {
+            continue;
+        }
+        
+        // Calculate angle between light normal and direction to hit point
+        let cos_light = max(dot(-wi, triangle_normal), 0.0);
+        
+        // Only consider lights facing the hit point
+        if (cos_light > 0.0) {
+            // Calculate radiance using area light equation:
+            // L = Le * cos(θ_light) * area / distance²
+            let radiance = emission * cos_light * area / (distance * distance);
+            total_radiance += radiance;
+            total_wi += wi * length(radiance);
+            
+            if (distance < closest_distance) {
+                closest_distance = distance;
+                best_light_vector = light_vector;
+            }
+        }
+    }
+    
+    // Normalize the accumulated direction
+    if (length(total_wi) > 0.0) {
+        total_wi = normalize(total_wi);
+    } else {
+        // Fallback if no valid lights
+        total_wi = vec3f(0.0, 1.0, 0.0);
+        total_radiance = vec3f(0.1);
+    }
+    
+    return Light(total_radiance, total_wi, closest_distance, best_light_vector);
+}
+
 fn sample_directional_light(p: vec3f) -> Light {
     const PI = 3.14159265359;
     
@@ -227,9 +311,9 @@ fn sample_directional_light(p: vec3f) -> Light {
 
 fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
     const PI = 3.14159265359;
-    let light = sample_directional_light((*hitInfo).position);
+    let light = sample_area_light((*hitInfo).position);
 
-    var shadowRay = Ray(hitInfo.position + 1e-4 * hitInfo.normal, light.rayFromPoint, 0, 1e5);
+    var shadowRay = Ray(hitInfo.position + 1e-4 * hitInfo.normal, normalize(light.rayFromPoint), 0, light.dist - 1e-3);
     var shadowHitInfo = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), 0,0,0);
     var inShadow = intersect_scene(&shadowRay, &shadowHitInfo);
 
@@ -303,16 +387,16 @@ fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
     let n = normalize((*hitInfo).normal);
     let hitColor = (*hitInfo).color;
 
-    var finalColor = hitColor.ambient + hitColor.diffuse;
-    if (inShadow) {
-        finalColor = hitColor.ambient;
+    var finalColor = vec3f(0.0);
+    
+    if (!inShadow) {
+        let ndotl = max(dot(n, light.w_i), 0.0);
+        // Lambert: Lo = (albedo/π) * Li * cosθ
+        let direct_lighting = (hitColor.diffuse / PI) * light.L_i * ndotl;
+        finalColor += direct_lighting;
     }
-    let ndotl = max(dot(n, light.w_i), 0.0);
 
-    // Lambert: Lo = (albedo/π) * Li * cosθ
-    let Lo = (finalColor / PI) * light.L_i * ndotl;
-
-    return Lo;
+    return finalColor;
 }
 
 fn ray_plane_intersect(ray: Ray, planePoint: vec3f, onb: Onb, color: vec3f, shader: u32, shinyness: f32, index_of_refraction: f32) -> HitInfo {

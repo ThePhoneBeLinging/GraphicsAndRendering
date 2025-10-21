@@ -69,6 +69,7 @@ async function main() {
 
     for(var i = 0; i < obj.materials.length; ++i) {
         const mat = obj.materials[i];
+        // Pack as vec4 for proper alignment - emission (xyz + padding), diffuse (xyz + padding)
         const emission = vec4(mat.emission.r, mat.emission.g, mat.emission.b, 0.0);
         const color = vec4(mat.color.r, mat.color.g, mat.color.b, 0.0);
         new Float32Array(materials, i*2*sizeof['vec4'], 8).set([...emission, ...color]);
@@ -81,6 +82,13 @@ async function main() {
     });
 
     device.queue.writeBuffer(matidxBuffer, 0, obj.mat_indices);
+
+    // Add light indices buffer for emissive triangles
+    const lightIndicesBuffer = device.createBuffer({
+        size: obj.light_indices.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+    device.queue.writeBuffer(lightIndicesBuffer, 0, obj.light_indices);
 
     let subdivLevel = 1;
     const subdivValue = document.getElementById('subdiv-value');
@@ -193,7 +201,8 @@ async function main() {
             { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
             { binding: 5, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
             { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-            { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
+            { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
         ],
     });
 
@@ -230,7 +239,8 @@ async function main() {
             { binding: 4, resource: { buffer: indexBuffer } },
             { binding: 5, resource: { buffer: normalBuffer } },
             { binding: 6, resource: { buffer: materialBuffer } },
-            { binding: 7, resource: { buffer: matidxBuffer } }
+            { binding: 7, resource: { buffer: matidxBuffer } },
+            { binding: 8, resource: { buffer: lightIndicesBuffer } }
         ],
     });
 
