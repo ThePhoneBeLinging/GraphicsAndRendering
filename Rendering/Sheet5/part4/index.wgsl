@@ -303,16 +303,31 @@ fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
     let n = normalize((*hitInfo).normal);
     let hitColor = (*hitInfo).color;
 
-    var finalColor = hitColor.ambient + hitColor.diffuse;
-    if (inShadow) {
-        finalColor = hitColor.ambient;
-    }
+    // hitColor.ambient stores emission, hitColor.diffuse stores diffuse reflectance
+    let emission = hitColor.ambient;
+    let diffuse_reflectance = hitColor.diffuse;
+    
     let ndotl = max(dot(n, light.w_i), 0.0);
 
-    // Lambert: Lo = (albedo/π) * Li * cosθ
-    let Lo = (finalColor / PI) * light.L_i * ndotl;
+    // Check if this is a light source (has significant emission)
+    let is_light = length(emission) > 1.0;
+    
+    if (is_light) {
+        // This is a light source - return emission only
+        return emission;
+    }
+    
+    // Proper shading: ambient + diffuse with good contrast
+    // Higher ambient (20%) makes boxes visible, diffuse provides depth
+    let ambient = diffuse_reflectance * 0.2;
+    var result = ambient;
+    
+    if (!inShadow) {
+        // Add diffuse contribution for lit surfaces
+        result += (diffuse_reflectance / PI) * light.L_i * ndotl;
+    }
 
-    return Lo;
+    return result;
 }
 
 fn ray_plane_intersect(ray: Ray, planePoint: vec3f, onb: Onb, color: vec3f, shader: u32, shinyness: f32, index_of_refraction: f32) -> HitInfo {
@@ -355,7 +370,10 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
     let material_index = matIndices[face_index];
     let material = materials[material_index];
     
-    let color = material.emission.xyz + material.diffuse.xyz;
+    // For Cornell Box flat shading: use sum of emission + diffuse as the color
+    // But store them properly: ambient=emission, diffuse=diffuse
+    let emission = material.emission.xyz;
+    let diffuse = material.diffuse.xyz;
     
     let shader = 2u;
     let shinyness = 1.0;
@@ -389,8 +407,9 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
         
         let face_normal = normalize(cross(edge1, edge2));
         
-        let colorAsDiffuse = Color(color * 0.1, color * 0.9, vec3f(0.0));
-        return HitInfo(true, t, position, face_normal, colorAsDiffuse, shader, index_of_refraction, shinyness);
+        // Store: ambient=emission, diffuse=diffuse reflectance, specular=0
+        let hitColor = Color(emission, diffuse, vec3f(0.0));
+        return HitInfo(true, t, position, face_normal, hitColor, shader, index_of_refraction, shinyness);
     }
     
     return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);
