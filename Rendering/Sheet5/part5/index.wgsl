@@ -386,7 +386,9 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
     let material_index = matIndices[face_index];
     let material = materials[material_index];
     
-    let color = material.emission.xyz + material.diffuse.xyz;
+    // Store emission in ambient field, diffuse in diffuse field (same as Part 4)
+    let emission = material.emission.xyz;
+    let diffuse = material.diffuse.xyz;
     
     let shader = 2u;
     let shinyness = 1.0;
@@ -420,8 +422,8 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
         
         let face_normal = normalize(cross(edge1, edge2));
         
-        let colorAsDiffuse = Color(color * 0.1, color * 0.9, vec3f(0.0));
-        return HitInfo(true, t, position, face_normal, colorAsDiffuse, shader, index_of_refraction, shinyness);
+        let hitColor = Color(emission, diffuse, vec3f(0.0));
+        return HitInfo(true, t, position, face_normal, hitColor, shader, index_of_refraction, shinyness);
     }
     
     return HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), shader, index_of_refraction, shinyness);
