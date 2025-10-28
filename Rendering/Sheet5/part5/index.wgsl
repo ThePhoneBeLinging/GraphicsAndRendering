@@ -213,67 +213,52 @@ fn intersect_scene(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> 
 
 
 fn sample_area_light(p: vec3f, surface_normal: vec3f) -> Light {
-    const PI = 3.14159265359;
-    
-    let num_lights = arrayLength(&lightIndices);
-    if (num_lights == 0u) {
-        return Light(vec3f(0.0), vec3f(0.0, 1.0, 0.0), 1e5, vec3f(0.0));
+    let nLights = arrayLength(&lightIndices);
+    if (nLights == 0u) {
+        return Light(vec3f(0.0), vec3f(0.0,1.0,0.0), 1e5, vec3f(0.0));
     }
-    
-    var total_radiance = vec3f(0.0);
-    var avg_direction = vec3f(0.0);
-    var closest_distance = 1e5;
-    var best_light_vector = vec3f(0.0);
-    var total_weight = 0.0;
-    
-    for (var light_idx = 0u; light_idx < num_lights; light_idx += 1u) {
-        let light_face_idx = lightIndices[light_idx];
-        let face = meshFaces[light_face_idx];
-        
+
+    var Lsum = vec3f(0.0);
+    var closestDist = 1e5;
+    var toClosest   = vec3f(0.0);
+
+    for (var k = 0u; k < nLights; k += 1u) {
+        let fidx = lightIndices[k];
+        let face = meshFaces[fidx];
+
         let v0 = vPositions[face.x];
         let v1 = vPositions[face.y];
         let v2 = vPositions[face.z];
-        
-        let light_center = (v0 + v1 + v2) / 3.0;
-        
-        let edge1 = v1 - v0;
-        let edge2 = v2 - v0;
-        let triangle_normal = normalize(cross(edge1, edge2));
-        let area = 0.5 * length(cross(edge1, edge2));
-        
-        let light_vector = light_center - p;
-        let distance = length(light_vector);
-        let wi = normalize(light_vector);
-        
-        let material_index = matIndices[light_face_idx];
-        let material = materials[material_index];
-        let Le = material.emission.xyz;
-        
-        if (length(Le) < 0.001) {
-            continue;
-        }
-        
-        let cos_theta_i = max(dot(surface_normal, wi), 0.0);
-        
-        let cos_theta_e = max(dot(-wi, triangle_normal), 0.0);
-        
-        if (cos_theta_i > 0.0 && cos_theta_e > 0.0) {
-            let irradiance = Le * cos_theta_e * area / (distance * distance);
-            
-            total_radiance += irradiance;
-            avg_direction += wi * length(irradiance);
-            total_weight += length(irradiance);
-            
-            if (distance < closest_distance) {
-                closest_distance = distance;
-                best_light_vector = light_vector;
-            }
+
+        let e1 = v1 - v0;
+        let e2 = v2 - v0;
+        let nL = normalize(cross(e1, e2));
+        let A = 0.5 * length(cross(e1, e2));
+        if (A <= 0.0) { continue; }
+
+        let xc = (v0 + v1 + v2) / 3.0;
+        let vec = xc - p;
+        let r = length(vec);
+        if (r <= 0.0) { continue; }
+        let wi = normalize(vec);
+
+        let matId = matIndices[fidx];
+        let Le = materials[matId].emission.xyz;
+        if (length(Le) < 1e-6) { continue; }
+
+        let cosThetaI = max(dot(surface_normal, wi), 0.0);
+        let cosThetaE = max(dot(-wi, nL), 0.0);
+
+        Lsum += Le * (cosThetaI * cosThetaE * A) / (r * r);
+
+        if (r < closestDist) {
+            closestDist = r;
+            toClosest = vec;
         }
     }
-    
-    avg_direction = normalize(avg_direction);
-    
-    return Light(total_radiance, avg_direction, closest_distance, best_light_vector);
+
+    let w_i = normalize(toClosest);
+    return Light(Lsum, w_i, closestDist, toClosest);
 }
 
 fn sample_directional_light(p: vec3f) -> Light {
@@ -295,10 +280,16 @@ fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
     
     let surface_normal = normalize((*hitInfo).normal);
     let light = sample_area_light((*hitInfo).position, surface_normal);
-    
-    var shadowRay = Ray(hitInfo.position + 1e-4 * surface_normal, normalize(light.rayFromPoint), 0, light.dist - 1e-3);
-    var shadowHitInfo = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), 0,0,0);
-    let visibility = select(1.0, 0.0, intersect_scene(&shadowRay, &shadowHitInfo));
+
+    var finalColor = (*hitInfo).color.ambient;
+
+    var shadowRay = Ray((*hitInfo).position + 1e-4 * surface_normal,
+                        normalize(light.rayFromPoint), 0, light.dist - 1e-3);
+
+    var tmp = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0),
+                    Color(vec3f(0.0), vec3f(0.0), vec3f(0.0)), 0u, 0.0, 0.0);
+
+    let V = select(1.0, 0.0, intersect_scene(&shadowRay, &tmp));
 
     switch (hitInfo.shader) {
         case 1u: { // Sphere
@@ -333,14 +324,9 @@ fn shade(ray: ptr<function, Ray>, hitInfo: ptr<function, HitInfo>) -> vec3f {
         }
     }
     
-    let hitColor = (*hitInfo).color;
-    
-    var finalColor = hitColor.ambient;
-    
-    if (visibility > 0.0) {
-        let cos_theta_i = max(dot(surface_normal, light.w_i), 0.0);
-        let fr = hitColor.diffuse / PI;
-        finalColor += fr * light.L_i * cos_theta_i * visibility;
+    if (V > 0.0) {
+        let fr = (*hitInfo).color.diffuse / PI;
+        finalColor += fr * light.L_i * V;
     }
 
     return finalColor;
@@ -386,7 +372,6 @@ fn intersect_triangle(ray: Ray, face_index: u32) -> HitInfo {
     let material_index = matIndices[face_index];
     let material = materials[material_index];
     
-    // Store emission in ambient field, diffuse in diffuse field (same as Part 4)
     let emission = material.emission.xyz;
     let diffuse = material.diffuse.xyz;
     
