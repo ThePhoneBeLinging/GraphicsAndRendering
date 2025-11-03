@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sheet6 - Part 2</title>
+    <script src="../../../MV.js"></script>
+    <script src="genmipmap.js"></script>
+    <script type="module" src="index.js"></script>
+</head>
+<body>
+    <h1>Sheet6 - Part 2</h1>
+
+    <div id="controls" style="margin-bottom:10px">
+        <label>Wrap mode:
+            <select id="wrapMode">
+                <option value="repeat">repeat</option>
+                <option value="clamp-to-edge">clamp-to-edge</option>
+            </select>
+        </label>
+        &nbsp;
+        <label>Min filter:
+            <select id="minFilter">
+                <option value="nearest">nearest</option>
+                <option value="linear">linear</option>
+            </select>
+        </label>
+        &nbsp;
+        <label>Mag filter:
+            <select id="magFilter">
+                <option value="nearest">nearest</option>
+                <option value="linear">linear</option>
+            </select>
+        </label>
+        &nbsp;
+        <label>Mipmap filter:
+            <select id="mipmapFilter">
+                <option value="nearest">nearest</option>
+                <option value="linear">linear</option>
+            </select>
+        </label>
+        &nbsp;
+        <label>
+            <input type="checkbox" id="enableMipmaps" checked /> Enable mipmaps
+        </label>
+    </div>
+
+    <canvas height="512" width="512"></canvas>
+</body>
+</html>
