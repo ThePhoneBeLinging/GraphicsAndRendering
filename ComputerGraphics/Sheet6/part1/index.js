@@ -14,58 +14,22 @@ async function main() {
     const wgslCode = await (await fetch('./index.wgsl')).text();
     const module = device.createShaderModule({ code: wgslCode });
 
-
-    const M_SQRT2 = Math.sqrt(2.0);
-    const M_SQRT6 = Math.sqrt(6.0)
     var positions = [
-        vec3(0.0, 0.0, 1.0),
-        vec3(0.0, 2.0*M_SQRT2/3.0, -1.0/3.0),
-        vec3(-M_SQRT6/3.0, -M_SQRT2/3.0, -1.0/3.0),
-        vec3(M_SQRT6/3.0, -M_SQRT2/3.0, -1.0/3.0),
+        vec3(-4.0, -1.0, -1.0),
+        vec3(4.0, -1.0, -1.0),
+        vec3(4.0, -1.0, -21.0),
+        vec3(-4.0, -1.0, -21.0),
     ];
-    var indices = [
-        0, 1, 2,
-        0, 3, 1,
-        1, 3, 2,
-        0, 2, 3
-    ];
+    var indices = [0, 1, 2, 0, 2, 3]; // two triangles
 
-    const wire_indices = new Uint32Array([
-        0, 1, 1, 2, 2, 3, 3, 0, // front
-        2, 3, 3, 7, 7, 6, 6, 2, // right
-        0, 3, 3, 7, 7, 4, 4, 0, // down
-        1, 2, 2, 6, 6, 5, 5, 1, // up
-        4, 5, 5, 6, 6, 7, 7, 4, // back
-        0, 1, 1, 5, 5, 4, 4, 0  // left
+    const texcoords = new Float32Array([
+        -1.5, 0.0,
+        2.5, 0.0,
+        2.5, 10.0,
+        -1.5, 10.0,
     ]);
 
-    let newIndices = subdivide_sphere(positions, indices);
-
-    let subdivLevel = 1;
-    const subdivValue = document.getElementById('subdiv-value');
-    const subdivInc = document.getElementById('subdiv-inc');
-    const subdivDec = document.getElementById('subdiv-dec');
-
-
-
-    subdivInc.addEventListener('click', () => {
-        subdivLevel = Math.min(subdivLevel + 1, 10);
-        subdivValue.textContent = subdivLevel;
-        updateSubDiv();
-        render();
-    });
-    subdivDec.addEventListener('click', () => {
-        subdivLevel = Math.max(subdivLevel - 1, 1);
-        subdivValue.textContent = subdivLevel;
-        updateSubDiv();
-        render();
-    });
-
-    for (let i = 0; i < subdivLevel; i++)
-    {
-        newIndices = subdivide_sphere(positions, newIndices);
-    }
-    let indexData = new Uint32Array(newIndices);
+    let indexData = new Uint32Array(indices);
 
     let positionData = flatten(positions);
     var vertexBuffer = device.createBuffer({
@@ -74,46 +38,79 @@ async function main() {
     });
     device.queue.writeBuffer(vertexBuffer, 0, positionData);
 
+    // Texcoord buffer (separate vertex buffer slot)
+    var texCoordBuffer = device.createBuffer({
+        size: texcoords.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(texCoordBuffer, 0, texcoords);
+
     var indexBuffer = device.createBuffer({
         size: indexData.byteLength,
         usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(indexBuffer, 0, indexData);
 
-    function updateSubDiv()
-    {
-        for (let i = 0; i < subdivLevel; i++)
-        {
-            newIndices = subdivide_sphere(positions, newIndices);
+    const texSize = 64;
+    const checker = new Uint8Array(texSize * texSize * 4);
+    for (let y = 0; y < texSize; ++y) {
+        for (let x = 0; x < texSize; ++x) {
+            const xs = Math.floor(x / (texSize / 8));
+            const ys = Math.floor(y / (texSize / 8));
+            const v = ((xs + ys) % 2) === 0 ? 0 : 255;
+            const idx = (y * texSize + x) * 4;
+            checker[idx] = v;
+            checker[idx + 1] = v;
+            checker[idx + 2] = v;
+            checker[idx + 3] = 255;
         }
-        indexData = new Uint32Array(newIndices);
-        positionData = flatten(positions);
-
-        vertexBuffer = device.createBuffer({
-            size: positionData.byteLength,
-            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        });
-        device.queue.writeBuffer(vertexBuffer, 0, positionData);
-
-        indexBuffer = device.createBuffer({
-            size: indexData.byteLength,
-            usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-        });
-        device.queue.writeBuffer(indexBuffer, 0, indexData);
     }
 
-    const bindGroupLayout = device.createBindGroupLayout({
-        entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } }],
+    const texture = device.createTexture({
+        size: { width: texSize, height: texSize, depthOrArrayLayers: 1 },
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
+
+    device.queue.writeTexture(
+        { texture: texture },
+        checker,
+        { bytesPerRow: texSize * 4 },
+        { width: texSize, height: texSize, depthOrArrayLayers: 1 }
+    );
+
+    const sampler = device.createSampler({
+        addressModeU: 'repeat',
+        addressModeV: 'repeat',
+        magFilter: 'nearest',
+        minFilter: 'nearest',
+    });
+
+    const bindGroupLayout = device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        ],
+    });
+
     const pipeline = device.createRenderPipeline({
         layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
         vertex: {
             module,
             entryPoint: 'vs',
-            buffers: [{
-                arrayStride: 12, // 3 * 4 bytes
-                attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
-            }],
+            buffers: [
+                {
+                    // positions
+                    arrayStride: 12, // 3 * 4
+                    attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+                },
+                {
+                    // texcoords
+                    arrayStride: 8, // 2 * 4
+                    attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }],
+                },
+            ],
         },
         fragment: {
             module,
@@ -133,36 +130,30 @@ async function main() {
     const bindGroups = uniformBuffers.map(buf =>
         device.createBindGroup({
             layout: pipeline.getBindGroupLayout(0),
-            entries: [{ binding: 0, resource: { buffer: buf } }],
+            entries: [
+                { binding: 0, resource: { buffer: buf } },
+                { binding: 1, resource: sampler },
+                { binding: 2, resource: texture.createView() },
+            ],
         })
     );
 
     const aspect =
         (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
-    const projGL = perspective(45.0, aspect, 0.1, 100.0);
-
-    const zfix = mat4(
-        1,0,0,0,
-        0,1,0,0,
-        0,0,0.5,0.5,
-        0,0,0,1
-    );
-    const eye = vec3(0,0, 10);
-    const at  = vec3(0,0,0);
-    const up  = vec3(0, 1, 0);
-    const view = lookAt(eye, at, up);
-
-    const baseModel = translate(-0.5, -0.5, -0.5);
-
+    const projGL = perspective(90.0, aspect, 0.1, 100.0);
+    const view = mat4();
     function mvpFor(model) {
+        const zfix = mat4(
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 0.5, 0.5,
+            0, 0, 0, 1
+        );
         return mult(zfix, mult(projGL, mult(view, model)));
     }
 
-    const modelOnePoint =
-        mult(translate(0.0, 0.0, 0.0),
-            mult(rotateX(-20), mult(rotateY(35), baseModel)));
-
-    device.queue.writeBuffer(uniformBuffers[0], 0, flatten(mvpFor(modelOnePoint)));
+    const model = mat4();
+    device.queue.writeBuffer(uniformBuffers[0], 0, flatten(mvpFor(model)));
 
     const renderPass = {
         colorAttachments: [{
@@ -173,28 +164,6 @@ async function main() {
         }],
     };
 
-    function subdivide_sphere(positions, indices)
-    {
-        var triangles = indices.length / 3;
-        var new_indices = [];
-        for (var i = 0; i < triangles; i++)
-        {
-            var i0 = indices[i*3+0];
-            var i1 = indices[i*3+1];
-            var i2 = indices[i*3+2];
-            var c01 = positions.length;
-            var c12 = c01 + 1;
-            var c20 = c12 + 1;
-            positions.push(normalize(add(positions[i0], positions[i1])));
-            positions.push(normalize(add(positions[i1], positions[i2])));
-            positions.push(normalize(add(positions[i2], positions[i0])));
-            new_indices.push(i0, c01, c20, c20, c01, c12, c12, c01, i1, c20, c12, i2);
-        }
-
-        return new_indices;
-    }
-
-
     function render() {
         renderPass.colorAttachments[0].view = context.getCurrentTexture().createView();
         const encoder = device.createCommandEncoder();
@@ -202,11 +171,10 @@ async function main() {
 
         pass.setPipeline(pipeline);
         pass.setVertexBuffer(0, vertexBuffer);
+        pass.setVertexBuffer(1, texCoordBuffer);
         pass.setIndexBuffer(indexBuffer, 'uint32');
-        for (let i = 0; i < 1; ++i) {
-            pass.setBindGroup(0, bindGroups[i]);
-            pass.drawIndexed(newIndices.length);
-        }
+        pass.setBindGroup(0, bindGroups[0]);
+        pass.drawIndexed(indices.length);
 
         pass.end();
         device.queue.submit([encoder.finish()]);
