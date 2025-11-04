@@ -84,8 +84,8 @@ fn intersect_aabb_clip(r: ptr<function, Ray>) -> bool {
     return true;
 }
 
-fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, triIndex: u32) -> bool {
-    let face = meshFaces[triIndex];
+fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, face_index: u32) -> bool {
+    let face = meshFaces[face_index];
     let p0 = vPositions[face.x].xyz;
     let p1 = vPositions[face.y].xyz;
     let p2 = vPositions[face.z].xyz;

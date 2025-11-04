@@ -40,9 +40,10 @@ struct JitterBuffer {
 @group(0) @binding(1) var my_texture: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read> jitters: JitterBuffer;
 
-@group(0) @binding(3) var<storage, read> vPositions: array<vec3f>;
+// IMPORTANT: positions and normals are vec4f (padded); read .xyz
+@group(0) @binding(3) var<storage, read> vPositions: array<vec4f>;
 @group(0) @binding(4) var<storage, read> meshFaces: array<vec3u>;
-@group(0) @binding(5) var<storage, read> vNormals: array<vec3f>;
+@group(0) @binding(5) var<storage, read> meshNormals: array<vec4f>;
 
 @group(0) @binding(6) var<storage, read> treeIds: array<u32>;
 @group(0) @binding(7) var<storage, read> bspTree: array<vec4u>;
@@ -88,118 +89,54 @@ fn intersect_aabb_clip(r: ptr<function, Ray>) -> bool {
 
 fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, face_index: u32) -> bool {
     let face = meshFaces[face_index];
-    let v0 = vPositions[face.x];
-    let v1 = vPositions[face.y];
-    let v2 = vPositions[face.z];
+    let p0 = vPositions[face.x].xyz;
+    let p1 = vPositions[face.y].xyz;
+    let p2 = vPositions[face.z].xyz;
 
-    let edge1 = v1 - v0;
-    let edge2 = v2 - v0;
-    let h = cross((*r).direction, edge2);
-    let a = dot(edge1, h);
+    let e0 = p1 - p0;
+    let e1 = p2 - p0;
+    let n = cross(e0, e1);
 
-    if (abs(a) < 1.0e-6) {
-        return false;
-    }
+    let denom = dot((*r).direction, n);
+    let eps = 1e-8;
+    if (abs(denom) < eps) { return false; }
 
-    let f = 1.0 / a;
-    let s = (*r).origin - v0;
-    let u = f * dot(s, h);
-    if (u < 0.0 || u > 1.0) {
-        return false;
-    }
+    let t = dot(p0 - (*r).origin, n) / denom;
+    if (!((*r).tmin < t && t < (*r).tmax)) { return false; }
 
-    let q = cross(s, edge1);
-    let v = f * dot((*r).direction, q);
-    if (v < 0.0 || u + v > 1.0) {
-        return false;
-    }
+    let a = p0 - (*r).origin;
+    let c1 = cross(a, (*r).direction);
+    let beta = dot(c1, e1) / denom;
+    let gamma = -dot(c1, e0) / denom;
 
-    let t = f * dot(edge2, q);
-    if (t <= (*r).tmin || t >= (*r).tmax) {
-        return false;
-    }
+    if (beta >= 0.0 && gamma >= 0.0 && (beta + gamma) <= 1.0) {
+        let w0 = 1.0 - beta - gamma;
+        let n0 = meshNormals[face.x].xyz;
+        let n1 = meshNormals[face.y].xyz;
+        let n2 = meshNormals[face.z].xyz;
+        let interpN = normalize(n0 * w0 + n1 * beta + n2 * gamma);
 
-    let pos = (*r).origin + t * (*r).direction;
-    let nrm = normalize(cross(edge1, edge2));
-
-    (*hit).has_hit = true;
-    (*hit).dist = t;
-    (*hit).position = pos;
-    (*hit).normal = nrm;
-    return true;
-}
-
-const MAX_LEVEL : u32 = 20u;
-const BSP_LEAF  : u32 = 3u;
-
-var<private> branch_node: array<vec2u, MAX_LEVEL>;
-var<private> branch_ray : array<vec2f, MAX_LEVEL>;
-
-fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-    var branch_lvl = 0u;
-    var node = 0u;
-
-    for (var i = 0u; i <= MAX_LEVEL; i = i + 1u) {
-        let tree_node = bspTree[node];
-        let axis_or_leaf = tree_node.x & 3u;
-
-        if (axis_or_leaf == BSP_LEAF) {
-            let count  = tree_node.x >> 2u;
-            let offset = tree_node.y;
-
-            var found_any = false;
-            for (var j = 0u; j < count; j = j + 1u) {
-                let tri_idx = treeIds[offset + j];
-                if (intersect_triangle(r, hit, tri_idx)) {
-                    (*r).tmax = (*hit).dist;
-                    found_any = true;
-                }
-            }
-            if (found_any) { return true; }
-
-            if (branch_lvl == 0u) { return false; }
-            branch_lvl = branch_lvl - 1u;
-            i    = branch_node[branch_lvl].x;
-            node = branch_node[branch_lvl].y;
-            (*r).tmin = branch_ray[branch_lvl].x;
-            (*r).tmax = branch_ray[branch_lvl].y;
-            continue;
-        }
-
-        let axis = axis_or_leaf;
-        let plane = bspPlanes[node];
-
-        let dir_a   = (*r).direction[axis];
-        let org_a   = (*r).origin[axis];
-        let left_id = tree_node.z;
-        let right_id= tree_node.w;
-
-        var near_node = left_id;
-        var far_node  = right_id;
-        if (dir_a < 0.0) {
-            near_node = right_id;
-            far_node  = left_id;
-        }
-
-        let denom = select(dir_a, 1.0e-8, abs(dir_a) < 1.0e-8);
-        let t = (plane - org_a) / denom;
-
-        if (t > (*r).tmax) {
-            node = near_node;
-        } else if (t < (*r).tmin) {
-            node = far_node;
-        } else {
-            branch_node[branch_lvl].x = i;
-            branch_node[branch_lvl].y = far_node;
-            branch_ray[branch_lvl].x  = t;
-            branch_ray[branch_lvl].y  = (*r).tmax;
-            branch_lvl = branch_lvl + 1u;
-
-            (*r).tmax = t;
-            node = near_node;
-        }
+        (*hit).has_hit = true;
+        (*hit).dist = t;
+        (*hit).position = (*r).origin + (*r).direction * t;
+        (*hit).normal = interpN;
+        return true;
     }
     return false;
+}
+
+fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
+    let num_triangles = arrayLength(&meshFaces);
+    var hit_anything = false;
+    
+    for (var i = 0u; i < num_triangles; i = i + 1u) {
+        if (intersect_triangle(r, hit, i)) {
+            (*r).tmax = (*hit).dist;
+            hit_anything = true;
+        }
+    }
+    
+    return hit_anything;
 }
 
 fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
