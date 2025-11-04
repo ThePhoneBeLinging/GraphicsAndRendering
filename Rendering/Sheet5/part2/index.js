@@ -81,7 +81,7 @@ async function main() {
     var cameraConstant = parseFloat(cameraConstantValue.value);
     var gamma = parseFloat(gammaValue.value);
     gamma = 2.4;
-    cameraConstant = 2.5;  // Set camera constant to 2.5 as required
+    cameraConstant = 2.5;
 
     cameraConstantSlider.addEventListener('input', () => {
         cameraConstant = parseFloat(cameraConstantSlider.value);
