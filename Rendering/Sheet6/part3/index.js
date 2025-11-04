@@ -93,10 +93,10 @@ async function main() {
     let cameraConstant = parseFloat(cameraConstantValue.value);
     let gamma = parseFloat(gammaValue.value);
     gamma = 2.4;
-    cameraConstant = 2.5;
+    cameraConstant = 1.0;
 
-    const eye = [0.15, 1.5, 10.0];
-    const at = [0.15, 1.5, 0.0];
+    const eye = [277.0, 275.0, -570.0];
+    const at = [277.0, 275.0, 0.0];
     const up = [0.0, 1.0, 0.0];
 
     const uniformData = new Float32Array(20);
@@ -139,16 +139,17 @@ async function main() {
 
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
-            { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },          
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },     
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-            { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-            { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-            { binding: 5, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-            { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-            { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-            { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-            { binding: 9, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+            { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }, 
+            { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }, 
+            { binding: 5, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }, 
+            { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }, 
+            { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }, 
+            { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }, 
+            { binding: 9, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }, 
+            { binding: 10, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },          
         ],
     });
 
@@ -313,6 +314,36 @@ async function main() {
         buffers = {};
         build_bsp_tree(obj, device, buffers);
 
+        const mat_bytelength = obj.materials.length * 2 * 16;
+        const materials = new ArrayBuffer(mat_bytelength);
+        for (let i = 0; i < obj.materials.length; ++i) {
+            const mat = obj.materials[i];
+            const emission = [
+                mat.emission ? mat.emission.r : 0.0,
+                mat.emission ? mat.emission.g : 0.0,
+                mat.emission ? mat.emission.b : 0.0,
+                0.0
+            ];
+            const diffuse = [
+                mat.color ? mat.color.r : 0.8,
+                mat.color ? mat.color.g : 0.8,
+                mat.color ? mat.color.b : 0.8,
+                0.0
+            ];
+            new Float32Array(materials, i * 2 * 16, 8).set([...emission, ...diffuse]);
+        }
+        buffers.materials = device.createBuffer({
+            size: mat_bytelength,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
+        });
+        device.queue.writeBuffer(buffers.materials, 0, materials);
+
+        buffers.lightIndices = device.createBuffer({
+            size: Math.max(obj.light_indices.byteLength, 4),
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+        });
+        device.queue.writeBuffer(buffers.lightIndices, 0, obj.light_indices);
+
         const { eye, at, up, cameraConstant: cc } = preset;
         uniformData[4] = eye[0];
         uniformData[5] = eye[1];
@@ -326,10 +357,8 @@ async function main() {
         uniformData[1] = cc;
 
         cameraConstant = cc;
-        const zoomEl = document.getElementById('zoom');
-        const zoomValEl = document.getElementById('zoom-value');
-        if (zoomEl) zoomEl.value = String(cc);
-        if (zoomValEl) zoomValEl.textContent = cc.toFixed(2);
+        if (cameraConstantSlider) cameraConstantSlider.value = String(cc);
+        if (cameraConstantValue) cameraConstantValue.textContent = cc.toFixed(2);
 
         device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
@@ -339,13 +368,14 @@ async function main() {
                 { binding: 0, resource: { buffer: uniformBuffer } },
                 { binding: 1, resource: texture.createView() },
                 { binding: 2, resource: { buffer: jitterBuffer } },
-                { binding: 3, resource: { buffer: buffers.positions } },
-                { binding: 4, resource: { buffer: buffers.indices } },
-                { binding: 5, resource: { buffer: buffers.normals } },
-                { binding: 6, resource: { buffer: buffers.treeIds } },
-                { binding: 7, resource: { buffer: buffers.bspTree } },
-                { binding: 8, resource: { buffer: buffers.bspPlanes } },
-                { binding: 9, resource: { buffer: buffers.aabb } },
+                { binding: 3, resource: { buffer: buffers.attribs } },  
+                { binding: 4, resource: { buffer: buffers.indices } },   
+                { binding: 5, resource: { buffer: buffers.materials } },
+                { binding: 6, resource: { buffer: buffers.lightIndices } },
+                { binding: 7, resource: { buffer: buffers.treeIds } },
+                { binding: 8, resource: { buffer: buffers.bspTree } },
+                { binding: 9, resource: { buffer: buffers.bspPlanes } },
+                { binding: 10, resource: { buffer: buffers.aabb } },
             ],
         });
 
@@ -353,9 +383,9 @@ async function main() {
     }
 
     updateJitterBuffer();
-    await loadModelAndRebind('teapot');
+    await loadModelAndRebind('cornellbox');
     if (modelSelect) {
-        modelSelect.value = 'teapot';
+        modelSelect.value = 'cornellbox';
         modelSelect.addEventListener('change', async (e) => {
             await loadModelAndRebind(e.target.value);
         });
