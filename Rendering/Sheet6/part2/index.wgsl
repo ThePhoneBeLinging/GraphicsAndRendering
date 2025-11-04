@@ -1,8 +1,8 @@
 struct Uniforms {
     aspectRatio: f32,
     cameraConstant: f32,
-    repeat: f32, 
-    filterMode: f32, 
+    repeat: f32,
+    filterMode: f32,
     eye: vec3f,
     useTexture: f32,
     up: vec3f,
@@ -39,15 +39,13 @@ struct JitterBuffer {
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var my_texture: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read> jitters: JitterBuffer;
-
-@group(0) @binding(3) var<storage, read> vPositions: array<vec3f>;
+@group(0) @binding(3) var<storage, read> vPositions: array<vec4f>;
 @group(0) @binding(4) var<storage, read> meshFaces: array<vec3u>;
-@group(0) @binding(5) var<storage, read> vNormals: array<vec3f>;
+@group(0) @binding(5) var<storage, read> meshNormals: array<vec4f>;
 
 @group(0) @binding(6) var<storage, read> treeIds: array<u32>;
 @group(0) @binding(7) var<storage, read> bspTree: array<vec4u>;
 @group(0) @binding(8) var<storage, read> bspPlanes: array<f32>;
-
 @group(0) @binding(9) var<uniform> aabb: Aabb;
 
 struct VertexOutput {
@@ -65,7 +63,7 @@ fn vs_main(@location(0) pos: vec2<f32>) -> VertexOutput {
 
 fn orthonormal_camera_basis() -> mat3x3<f32> {
     let w = normalize(uniforms.eye - uniforms.at);
-    let u = normalize(cross(uniforms.up, w)); 
+    let u = normalize(cross(uniforms.up, w));
     let v = cross(w, u);
     return mat3x3<f32>(u, v, w);
 }
@@ -86,51 +84,47 @@ fn intersect_aabb_clip(r: ptr<function, Ray>) -> bool {
     return true;
 }
 
-fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, face_index: u32) -> bool {
-    let face = meshFaces[face_index];
-    let v0 = vPositions[face.x];
-    let v1 = vPositions[face.y];
-    let v2 = vPositions[face.z];
+fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, triIndex: u32) -> bool {
+    let face = meshFaces[triIndex];
+    let p0 = vPositions[face.x].xyz;
+    let p1 = vPositions[face.y].xyz;
+    let p2 = vPositions[face.z].xyz;
 
-    let edge1 = v1 - v0;
-    let edge2 = v2 - v0;
-    let h = cross((*r).direction, edge2);
-    let a = dot(edge1, h);
+    let e0 = p1 - p0;
+    let e1 = p2 - p0;
+    let n = cross(e0, e1);
 
-    if (abs(a) < 1.0e-6) {
-        return false;
+    let denom = dot((*r).direction, n);
+    let eps = 1e-8;
+    if (abs(denom) < eps) { return false; }
+
+    let t = dot(p0 - (*r).origin, n) / denom;
+    if (!((*r).tmin < t && t < (*r).tmax)) { return false; }
+
+    let a = p0 - (*r).origin;
+    let c1 = cross(a, (*r).direction);
+    let beta = dot(c1, e1) / denom;
+    let gamma = -dot(c1, e0) / denom;
+
+    if (beta >= 0.0 && gamma >= 0.0 && (beta + gamma) <= 1.0) {
+        let w0 = 1.0 - beta - gamma;
+        let n0 = meshNormals[face.x].xyz;
+        let n1 = meshNormals[face.y].xyz;
+        let n2 = meshNormals[face.z].xyz;
+        let interpN = normalize(n0 * w0 + n1 * beta + n2 * gamma);
+
+        (*hit).has_hit = true;
+        (*hit).dist = t;
+        (*hit).position = (*r).origin + (*r).direction * t;
+        (*hit).normal = interpN;
+        return true;
     }
-
-    let f = 1.0 / a;
-    let s = (*r).origin - v0;
-    let u = f * dot(s, h);
-    if (u < 0.0 || u > 1.0) {
-        return false;
-    }
-
-    let q = cross(s, edge1);
-    let v = f * dot((*r).direction, q);
-    if (v < 0.0 || u + v > 1.0) {
-        return false;
-    }
-
-    let t = f * dot(edge2, q);
-    if (t <= (*r).tmin || t >= (*r).tmax) {
-        return false;
-    }
-
-    let pos = (*r).origin + t * (*r).direction;
-    let nrm = normalize(cross(edge1, edge2));
-
-    (*hit).has_hit = true;
-    (*hit).dist = t;
-    (*hit).position = pos;
-    (*hit).normal = nrm;
-    return true;
+    return false;
 }
 
-const MAX_LEVEL : u32 = 20u;
-const BSP_LEAF  : u32 = 3u;
+
+const MAX_LEVEL: u32 = 20u;
+const BSP_LEAF: u32 = 3u;
 
 var<private> branch_node: array<vec2u, MAX_LEVEL>;
 var<private> branch_ray : array<vec2f, MAX_LEVEL>;
@@ -144,7 +138,7 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
         let axis_or_leaf = tree_node.x & 3u;
 
         if (axis_or_leaf == BSP_LEAF) {
-            let count  = tree_node.x >> 2u;
+            let count = tree_node.x >> 2u;
             let offset = tree_node.y;
 
             var found_any = false;
@@ -159,7 +153,7 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
 
             if (branch_lvl == 0u) { return false; }
             branch_lvl = branch_lvl - 1u;
-            i    = branch_node[branch_lvl].x;
+            i = branch_node[branch_lvl].x;
             node = branch_node[branch_lvl].y;
             (*r).tmin = branch_ray[branch_lvl].x;
             (*r).tmax = branch_ray[branch_lvl].y;
@@ -169,16 +163,16 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
         let axis = axis_or_leaf;
         let plane = bspPlanes[node];
 
-        let dir_a   = (*r).direction[axis];
-        let org_a   = (*r).origin[axis];
+        let dir_a = (*r).direction[axis];
+        let org_a = (*r).origin[axis];
         let left_id = tree_node.z;
-        let right_id= tree_node.w;
+        let right_id = tree_node.w;
 
         var near_node = left_id;
-        var far_node  = right_id;
+        var far_node = right_id;
         if (dir_a < 0.0) {
             near_node = right_id;
-            far_node  = left_id;
+            far_node = left_id;
         }
 
         let denom = select(dir_a, 1.0e-8, abs(dir_a) < 1.0e-8);
@@ -191,8 +185,8 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
         } else {
             branch_node[branch_lvl].x = i;
             branch_node[branch_lvl].y = far_node;
-            branch_ray[branch_lvl].x  = t;
-            branch_ray[branch_lvl].y  = (*r).tmax;
+            branch_ray[branch_lvl].x = t;
+            branch_ray[branch_lvl].y = (*r).tmax;
             branch_lvl = branch_lvl + 1u;
 
             (*r).tmax = t;
@@ -203,9 +197,7 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
 }
 
 fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-    if (!intersect_aabb_clip(r)) {
-        return false;
-    }
+    if (!intersect_aabb_clip(r)) { return false; }
     return intersect_trimesh(r, hit);
 }
 
@@ -218,8 +210,12 @@ fn shade_lambert(n: vec3f) -> vec3f {
     return albedo * (ambient + ndotl);
 }
 
+struct FragOut {
+    @location(0) color: vec4f
+};
+
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(input: VertexOutput) -> FragOut {
     let p = input.imagePlanePos;
     let cam = orthonormal_camera_basis();
     let u = cam[0];
@@ -240,7 +236,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
         var ray = Ray(origin, dir, 0.0, 1.0e5);
         var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0));
-
         var color = vec3f(0.1, 0.3, 0.6);
         if (intersect_scene(&ray, &hit)) {
             color = shade_lambert(hit.normal);
@@ -251,5 +246,5 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let avg = accum / max(1.0, f32(JV));
     let gamma = max(uniforms.gamma, 1.0);
     let mapped = pow(avg, vec3f(1.0 / gamma));
-    return vec4f(mapped, 1.0);
+    return FragOut(vec4f(mapped, 1.0));
 }

@@ -7,6 +7,7 @@ async function main() {
         ],
     });
     if (!device) { fail('need a browser that supports WebGPU'); return; }
+
     const timingHelper = new TimingHelper(device);
     let gpuTime = 0;
     const gpuTimeDisplay = document.getElementById('gpu-time');
@@ -16,11 +17,10 @@ async function main() {
     const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
     context.configure({ device, format: presentationFormat });
 
-    //const wgslCode = document.querySelector('script[type="x-shader/x-wgsl"]').textContent;
     const wgslCode = await (await fetch('./index.wgsl')).text();
     const module = device.createShaderModule({ code: wgslCode });
 
-    const vertices = new Float32Array([-1,-1, 1,-1, -1,1, 1,1]);
+    const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
     const vertexBuffer = device.createBuffer({
         size: vertices.byteLength,
         usage: GPUBufferUsage.VERTEX,
@@ -29,28 +29,44 @@ async function main() {
     new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
     vertexBuffer.unmap();
 
-    function compute_jitters(jitter, pixelsize, subdivs)
-    {
-        const step = pixelsize/subdivs;
-        if(subdivs < 2) {
+    function compute_jitters(jitter, pixelsize, subdivs) {
+        const step = pixelsize / subdivs;
+        if (subdivs < 2) {
             jitter[0] = 0.0;
             jitter[1] = 0.0;
-        }
-        else {
-            for(var i = 0; i < subdivs; ++i)
-                for(var j = 0; j < subdivs; ++j) {
-                    const idx = (i*subdivs + j)*2;
-                    jitter[idx] = (Math.random() + j)*step - pixelsize*0.5;
-                    jitter[idx + 1] = (Math.random() + i)*step - pixelsize*0.5;
+        } else {
+            for (let i = 0; i < subdivs; ++i)
+                for (let j = 0; j < subdivs; ++j) {
+                    const idx = (i * subdivs + j) * 2;
+                    jitter[idx] = (Math.random() + j) * step - pixelsize * 0.5;
+                    jitter[idx + 1] = (Math.random() + i) * step - pixelsize * 0.5;
                 }
         }
     }
 
-    // Load teapot mesh
-    const obj_filename = '../objects/teapot.obj';
-    const obj = await readOBJFile(obj_filename, 1, true);
-    const buffers = {};
-    build_bsp_tree(obj, device, buffers);
+    const MODEL_PRESETS = {
+        teapot: {
+            file: '../objects/teapot.obj',
+            eye: [0.15, 1.5, 10.0],
+            at: [0.15, 1.5, 0.0],
+            up: [0.0, 1.0, 0.0],
+            cameraConstant: 2.5,
+        },
+        bunny: {
+            file: '../objects/bunny.obj',
+            eye: [-0.02, 0.11, 0.6],
+            at: [-0.02, 0.11, 0.0],
+            up: [0.0, 1.0, 0.0],
+            cameraConstant: 3.5,
+        },
+        cornellbox: {
+            file: '../objects/CornellBoxWithBlocks.obj',
+            eye: [277.0, 275.0, -570.0],
+            at: [277.0, 275.0, 0.0],
+            up: [0.0, 1.0, 0.0],
+            cameraConstant: 1.0,
+        },
+    };
 
     let subdivLevel = 1;
     const subdivValue = document.getElementById('subdiv-value');
@@ -62,12 +78,6 @@ async function main() {
     const textureScalingInc = document.getElementById('texture-scaling-inc');
     const textureScalingDec = document.getElementById('texture-scaling-dec');
 
-    let jitter = new Float32Array(200);
-    const jitterBuffer = device.createBuffer({
-        size: jitter.byteLength,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-    });
-
     const cameraConstantSlider = document.getElementById('zoom');
     const cameraConstantValue = document.getElementById('zoom-value');
     const gammaSlider = document.getElementById('gamma');
@@ -75,48 +85,15 @@ async function main() {
     const addressModeDropdown = document.getElementById('filter-mode');
     const filterMode = document.getElementById('sunday');
     const useTexture = document.getElementById('use-texture');
+    const modelSelect = document.getElementById('model');
 
-    var cameraConstant = parseFloat(cameraConstantValue.value);
-    var gamma = parseFloat(gammaValue.value);
+    let buffers = {};
+    let currentModel = 'teapot';
+    let aspectRatio = canvas.width / canvas.height;
+    let cameraConstant = parseFloat(cameraConstantValue.value);
+    let gamma = parseFloat(gammaValue.value);
     gamma = 2.4;
     cameraConstant = 2.5;
-
-    cameraConstantSlider.addEventListener('input', () => {
-        cameraConstant = parseFloat(cameraConstantSlider.value);
-        cameraConstantValue.textContent = cameraConstant.toFixed(2);
-        uniformData[1] = cameraConstant;
-        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
-        render();
-    });
-    gammaSlider.addEventListener('input', () => {
-        gamma = parseFloat(gammaSlider.value);
-        gammaValue.textContent = gamma.toFixed(2);
-        uniformData[16] = gamma;
-        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
-        render();
-    });
-
-    addressModeDropdown.addEventListener('change', () => {
-        let value = addressModeDropdown.value;
-        uniformData[2] = value === "repeat" ? 1 : 0;
-        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
-        render();
-    });
-    filterMode.addEventListener('change', () => {
-        let filterModeValue = filterMode.value;
-        uniformData[3] = filterModeValue === 'nearest' ? 0 : 1;
-        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
-        render();
-    });
-
-    let aspectRatio = canvas.width / canvas.height;
-    useTexture.checked = true;
-
-    useTexture.addEventListener('change', () => {
-        uniformData[7] = useTexture.checked ? 1 : 0;
-        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
-        render();
-    });
 
     const eye = [0.15, 1.5, 10.0];
     const at = [0.15, 1.5, 0.0];
@@ -130,7 +107,7 @@ async function main() {
     uniformData[4] = eye[0];
     uniformData[5] = eye[1];
     uniformData[6] = eye[2];
-    uniformData[7] = 1;             
+    uniformData[7] = 1;
     uniformData[8] = up[0];
     uniformData[9] = up[1];
     uniformData[10] = up[2];
@@ -154,37 +131,24 @@ async function main() {
 
     const texture = await load_texture(device, 'grass.jpg');
 
-    const bindGroupLayout = device.createBindGroupLayout({
-    entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        { binding: 5, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        { binding: 9, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-    ],
+    let jitter = new Float32Array(200);
+    const jitterBuffer = device.createBuffer({
+        size: jitter.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
 
-    let bindGroup = device.createBindGroup({
-        layout: bindGroupLayout,
+    const bindGroupLayout = device.createBindGroupLayout({
         entries: [
-            { binding: 0, resource: { buffer: uniformBuffer } },
-            { binding: 1, resource: texture.createView() },
-            { binding: 2, resource: { buffer: jitterBuffer } },
-
-            { binding: 3, resource: { buffer: buffers.positions } },
-            { binding: 4, resource: { buffer: buffers.indices } },
-            { binding: 5, resource: { buffer: buffers.normals } },
-
-            { binding: 6, resource: { buffer: buffers.treeIds } },
-            { binding: 7, resource: { buffer: buffers.bspTree } },
-            { binding: 8, resource: { buffer: buffers.bspPlanes } },
-
-            { binding: 9, resource: { buffer: buffers.aabb } },
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 5, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+            { binding: 9, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         ],
     });
 
@@ -207,8 +171,47 @@ async function main() {
     });
 
     const renderPassDescriptor = {
-        colorAttachments: [{ clearValue: [0,0,0,0], loadOp: 'clear', storeOp: 'store' }],
+        colorAttachments: [{ clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' }],
     };
+
+    let bindGroup;
+
+    cameraConstantSlider.addEventListener('input', () => {
+        cameraConstant = parseFloat(cameraConstantSlider.value);
+        cameraConstantValue.textContent = cameraConstant.toFixed(2);
+        uniformData[1] = cameraConstant;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        render();
+    });
+
+    gammaSlider.addEventListener('input', () => {
+        gamma = parseFloat(gammaSlider.value);
+        gammaValue.textContent = gamma.toFixed(2);
+        uniformData[16] = gamma;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        render();
+    });
+
+    addressModeDropdown.addEventListener('change', () => {
+        const value = addressModeDropdown.value;
+        uniformData[2] = value === "repeat" ? 1 : 0;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        render();
+    });
+
+    filterMode.addEventListener('change', () => {
+        const filterModeValue = filterMode.value;
+        uniformData[3] = filterModeValue === 'nearest' ? 0 : 1;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        render();
+    });
+
+    useTexture.checked = true;
+    useTexture.addEventListener('change', () => {
+        uniformData[7] = useTexture.checked ? 1 : 0;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        render();
+    });
 
     subdivInc.addEventListener('click', () => {
         subdivLevel = Math.min(subdivLevel + 1, 10);
@@ -216,6 +219,7 @@ async function main() {
         updateJitterBuffer();
         render();
     });
+
     subdivDec.addEventListener('click', () => {
         subdivLevel = Math.max(subdivLevel - 1, 1);
         subdivValue.textContent = subdivLevel;
@@ -232,25 +236,29 @@ async function main() {
 
     textureScalingInc.addEventListener('click', () => {
         textureScalingLevel = Math.min(textureScalingLevel + 1, 10);
-        updateTextureScaling()
+        updateTextureScaling();
     });
+
     textureScalingDec.addEventListener('click', () => {
         textureScalingLevel = Math.max(textureScalingLevel - 1, 1);
-        updateTextureScaling()
+        updateTextureScaling();
+    });
+
+    addEventListener("wheel", (event) => {
+        cameraConstant *= 1.0 + 2.5e-4 * event.deltaY;
+        uniformData[1] = cameraConstant;
+        requestAnimationFrame(animate);
     });
 
     function updateJitterBuffer() {
         const pixelSizeNDC = 2 / canvas.height;
         compute_jitters(jitter, pixelSizeNDC, subdivLevel);
-
         const vecCount = subdivLevel * subdivLevel;
         uniformData[15] = vecCount;
         device.queue.writeBuffer(uniformBuffer, 0, uniformData);
-
         const byteLength = vecCount * 2 * 4;
         device.queue.writeBuffer(jitterBuffer, 0, jitter, 0, byteLength / 4);
     }
-
 
     function render() {
         renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
@@ -261,17 +269,17 @@ async function main() {
                 loadOp: "clear",
                 storeOp: "store",
             }]
-        })
+        });
         pass.setBindGroup(0, bindGroup);
         pass.setVertexBuffer(0, vertexBuffer);
         pass.setPipeline(pipeline);
         pass.draw(4);
         pass.end();
+
         device.queue.submit([encoder.finish()]);
-        timingHelper.getResult().then( time => {
-            gpuTime = time/1000;
-            if (gpuTimeDisplay)
-                gpuTimeDisplay.textContent = gpuTime.toFixed(3) + ' ms';
+        timingHelper.getResult().then(time => {
+            gpuTime = time / 1000;
+            if (gpuTimeDisplay) gpuTimeDisplay.textContent = gpuTime.toFixed(3) + ' ms';
         });
     }
 
@@ -297,15 +305,65 @@ async function main() {
         return texture;
     }
 
-    addEventListener("wheel", (event) => {
-        cameraConstant *= 1.0 + 2.5e-4*event.deltaY;
-        uniformData[1] = cameraConstant;
-        requestAnimationFrame(animate);
-    });
+    async function loadModelAndRebind(key) {
+        currentModel = key;
+        const preset = MODEL_PRESETS[key];
+
+        const obj = await readOBJFile(preset.file, 1, true);
+        buffers = {};
+        build_bsp_tree(obj, device, buffers);
+
+        const { eye, at, up, cameraConstant: cc } = preset;
+        uniformData[4] = eye[0];
+        uniformData[5] = eye[1];
+        uniformData[6] = eye[2];
+        uniformData[12] = at[0];
+        uniformData[13] = at[1];
+        uniformData[14] = at[2];
+        uniformData[8] = up[0];
+        uniformData[9] = up[1];
+        uniformData[10] = up[2];
+        uniformData[1] = cc;
+
+        cameraConstant = cc;
+        const zoomEl = document.getElementById('zoom');
+        const zoomValEl = document.getElementById('zoom-value');
+        if (zoomEl) zoomEl.value = String(cc);
+        if (zoomValEl) zoomValEl.textContent = cc.toFixed(2);
+
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+
+        bindGroup = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: texture.createView() },
+                { binding: 2, resource: { buffer: jitterBuffer } },
+                { binding: 3, resource: { buffer: buffers.positions } },
+                { binding: 4, resource: { buffer: buffers.indices } },
+                { binding: 5, resource: { buffer: buffers.normals } },
+                { binding: 6, resource: { buffer: buffers.treeIds } },
+                { binding: 7, resource: { buffer: buffers.bspTree } },
+                { binding: 8, resource: { buffer: buffers.bspPlanes } },
+                { binding: 9, resource: { buffer: buffers.aabb } },
+            ],
+        });
+
+        render();
+    }
 
     updateJitterBuffer();
+    await loadModelAndRebind('teapot');
+    if (modelSelect) {
+        modelSelect.value = 'teapot';
+        modelSelect.addEventListener('change', async (e) => {
+            await loadModelAndRebind(e.target.value);
+        });
+    }
+
     animate();
 }
 
 function fail(msg) { alert(msg); }
+
 window.addEventListener("load", main);
