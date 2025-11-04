@@ -30,7 +30,10 @@ struct HitInfo {
     dist: f32,
     position: vec3f,
     normal: vec3f,
-    material_idx: u32,
+    diffuse: vec3f,
+    emission: vec3f,
+    shader: i32,
+    iof: f32,
 };
 
 struct JitterBuffer {
@@ -130,11 +133,17 @@ fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, face_i
     let n2 = attribs[face.z].normal.xyz;
     let interpN = normalize(n0 * w0 + n1 * u + n2 * v);
 
-    (*hit).has_hit      = true;
-    (*hit).dist         = t;
-    (*hit).position     = (*r).origin + (*r).direction * t;
-    (*hit).normal       = interpN;
-    (*hit).material_idx = face.w;
+    let mid = face.w;
+    let mat = materials[mid];
+
+    (*hit).has_hit  = true;
+    (*hit).dist     = t;
+    (*hit).position = (*r).origin + (*r).direction * t;
+    (*hit).normal   = interpN;
+    (*hit).diffuse  = mat.diffuse.xyz;
+    (*hit).emission = mat.emission.xyz;
+    (*hit).shader   = 0;
+    (*hit).iof      = 1.0;
     return true;
 }
 
@@ -214,19 +223,41 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
 }
 
 fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-    if (!intersect_aabb_clip(r)) { return false; }
-    return intersect_trimesh(r, hit);
+    // Left sphere - mirror at (420, 90, 370) radius 90
+    let left_sphere_center = vec3f(420.0, 90.0, 370.0);
+    let left_sphere_radius = 90.0;
+    if (intersect_sphere(r, hit, left_sphere_center, left_sphere_radius, 1, 1.0)) {
+        (*r).tmax = (*hit).dist;
+    }
+    
+    // Right sphere - glass at (130, 90, 250) radius 90, ior 1.5
+    let right_sphere_center = vec3f(130.0, 90.0, 250.0);
+    let right_sphere_radius = 90.0;
+    if (intersect_sphere(r, hit, right_sphere_center, right_sphere_radius, 2, 1.5)) {
+        (*r).tmax = (*hit).dist;
+    }
+    
+    // Intersect with trimesh (Cornell box)
+    if (intersect_aabb_clip(r)) {
+        if (intersect_trimesh(r, hit)) {
+            (*r).tmax = (*hit).dist;
+        }
+    }
+    
+    return (*hit).has_hit;
 }
 
-fn sample_area_lights(p: vec3f, surface_normal: vec3f, mat_idx: u32) -> vec3f {
+fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     const PI = 3.14159265359;
     let nLights = arrayLength(&lightIndices);
     if (nLights == 0u) {
         return vec3f(0.0);
     }
 
-    let rho = materials[mat_idx].diffuse.xyz;
-    let brdf = rho / PI;
+    let surface_diffuse = (*hit).diffuse;
+    let surface_normal = normalize((*hit).normal);
+    let p = (*hit).position;
+    let brdf = surface_diffuse / PI;
     var sum = vec3f(0.0);
 
     for (var k = 0u; k < nLights; k += 1u) {
@@ -261,7 +292,7 @@ fn sample_area_lights(p: vec3f, surface_normal: vec3f, mat_idx: u32) -> vec3f {
 
         let shadow_tmax = max(r - 1.0, 1.0);
         var shadowRay = Ray(p, wi, 1.0, shadow_tmax);
-        var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), 0u);
+        var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0);
         if (intersect_scene(&shadowRay, &shadowHit)) { continue; }
 
         let E = Le * (A * cosL) / (r * r);
@@ -272,15 +303,67 @@ fn sample_area_lights(p: vec3f, surface_normal: vec3f, mat_idx: u32) -> vec3f {
     return sum;
 }
 
-fn shade(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-    let mat = materials[(*hit).material_idx];
-    let surface_normal = normalize((*hit).normal);
+fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: vec3f, radius: f32, shader_type: i32, iof_val: f32) -> bool {
+    let oc = (*r).origin - center;
+    let b = dot(oc, (*r).direction);
+    let c = dot(oc, oc) - radius * radius;
+    let discriminant = b * b - c;
     
-    let Le = mat.emission.xyz;
+    if (discriminant < 0.0) { return false; }
     
-    let reflected = sample_area_lights((*hit).position, surface_normal, (*hit).material_idx);
+    let sqrt_disc = sqrt(discriminant);
+    let t1 = -b - sqrt_disc;
+    let t2 = -b + sqrt_disc;
     
-    return Le + reflected;
+    var t = t1;
+    if (t < (*r).tmin || t > (*r).tmax) {
+        t = t2;
+        if (t < (*r).tmin || t > (*r).tmax) {
+            return false;
+        }
+    }
+    
+    (*hit).dist = t;
+    (*hit).position = (*r).origin + (*r).direction * t;
+    (*hit).normal = normalize((*hit).position - center);
+    (*hit).has_hit = true;
+    (*hit).diffuse = vec3f(0.0);
+    (*hit).emission = vec3f(0.0);
+    (*hit).shader = shader_type;
+    (*hit).iof = iof_val;
+    
+    return true;
+}
+
+fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+    return (*hit).emission + sample_area_lights(r, hit);
+}
+
+fn mirror_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+    let reflected = reflect(normalize((*r).direction), normalize((*hit).normal));
+    
+    (*hit).has_hit = false;
+    (*r).direction = normalize(reflected);
+    (*r).origin = (*hit).position;
+    (*r).tmin = 1.0;
+    (*r).tmax = 1e9;
+
+    return vec3f(0.0);
+}
+
+fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+    let entering = dot((*r).direction, (*hit).normal) <= 0.0;
+    let n = select(-(*hit).normal, (*hit).normal, entering);
+    let eta = select((*hit).iof / 1.0, 1.0 / (*hit).iof, entering);
+    let refracted = normalize(refract((*r).direction, n, eta));
+
+    (*r).direction = refracted;
+    (*r).origin = (*hit).position + refracted * 1e-4;
+    (*r).tmin = 0.1;
+    (*r).tmax = 1e9;
+    (*hit).has_hit = false;
+    
+    return vec3f(0.0);
 }
 
 struct FragOut {
@@ -309,10 +392,23 @@ fn fs_main(input: VertexOutput) -> FragOut {
                             + (p.y + j.y) * v);
 
         var ray = Ray(origin, dir, 1.0e-4, 1.0e5);
-        var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), 0u);
+        var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0);
         var color = vec3f(0.1, 0.3, 0.6);
-        if (intersect_scene(&ray, &hit)) {
-            color = shade(&ray, &hit);
+        
+        const max_depth = 10;
+        for (var depth = 0; depth < max_depth; depth = depth + 1) {
+            if (intersect_scene(&ray, &hit)) {
+                if (hit.shader == 0) {
+                    color = shade(&ray, &hit);
+                    break;
+                } else if (hit.shader == 1) {
+                    color = mirror_shader(&ray, &hit);
+                } else if (hit.shader == 2) {
+                    color = refract_shader(&ray, &hit);
+                }
+            } else {
+                break;
+            }
         }
         accum += color;
     }

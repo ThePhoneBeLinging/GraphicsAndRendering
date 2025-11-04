@@ -68,7 +68,7 @@ async function main() {
         },
     };
 
-    let subdivLevel = 1;
+    let subdivLevel = 2;
     const subdivValue = document.getElementById('subdiv-value');
     const subdivInc = document.getElementById('subdiv-inc');
     const subdivDec = document.getElementById('subdiv-dec');
