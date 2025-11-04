@@ -1,7 +1,15 @@
 async function main() {
     const adapter = await navigator.gpu?.requestAdapter();
-    const device = await adapter?.requestDevice();
+    const canTimestamp = adapter.features.has('timestamp-query');
+    const device = await adapter.requestDevice({
+        requiredFeatures: [
+            ...(canTimestamp ? ['timestamp-query'] : []),
+        ],
+    });
     if (!device) { fail('need a browser that supports WebGPU'); return; }
+    const timingHelper = new TimingHelper(device);
+    let gpuTime = 0;
+    const gpuTimeDisplay = document.getElementById('gpu-time');
 
     const canvas = document.querySelector('canvas');
     const context = canvas.getContext('webgpu');
@@ -289,13 +297,24 @@ async function main() {
     function render() {
         renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
         const encoder = device.createCommandEncoder();
-        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        const pass = timingHelper.beginRenderPass(encoder, {
+            colorAttachments: [{
+                view: context.getCurrentTexture().createView(),
+                loadOp: "clear",
+                storeOp: "store",
+            }]
+        })
         pass.setBindGroup(0, bindGroup);
         pass.setVertexBuffer(0, vertexBuffer);
         pass.setPipeline(pipeline);
         pass.draw(4);
         pass.end();
         device.queue.submit([encoder.finish()]);
+        timingHelper.getResult().then( time => {
+            gpuTime = time/1000;
+            if (gpuTimeDisplay)
+                gpuTimeDisplay.textContent = gpuTime.toFixed(3) + ' ms';
+        });
     }
 
     function animate() {
