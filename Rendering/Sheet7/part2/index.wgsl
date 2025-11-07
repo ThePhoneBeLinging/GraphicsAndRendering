@@ -250,7 +250,7 @@ fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
     return (*hit).has_hit;
 }
 
-fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
+fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     const PI = 3.14159265359;
     let nLights = arrayLength(&lightIndices);
     if (nLights == 0u) {
@@ -261,49 +261,67 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec
     let surface_normal = normalize((*hit).normal);
     let p = (*hit).position;
     let brdf = surface_diffuse / PI;
-    var sum = vec3f(0.0);
 
-    for (var k = 0u; k < nLights; k += 1u) {
-        let fidx = lightIndices[k];
-        let face = meshFaces[fidx];
+    let light_idx = u32(rnd(seed) * f32(nLights));
+    let clamped_idx = min(light_idx, nLights - 1u);
+    let fidx = lightIndices[clamped_idx];
+    let face = meshFaces[fidx];
 
-        let v0 = attribs[face.x].position.xyz;
-        let v1 = attribs[face.y].position.xyz;
-        let v2 = attribs[face.z].position.xyz;
+    let v0 = attribs[face.x].position.xyz;
+    let v1 = attribs[face.y].position.xyz;
+    let v2 = attribs[face.z].position.xyz;
 
-        let e1 = v1 - v0;
-        let e2 = v2 - v0;
-        let nL = normalize(cross(e1, e2));
-        let A = 0.5 * length(cross(e1, e2));
-        if (A <= 0.0) { continue; }
+    let xi1 = rnd(seed);
+    let xi2 = rnd(seed);
+    let alpha = 1.0 - sqrt(xi1);
+    let beta = (1.0 - xi2) * sqrt(xi1);
+    let gamma = xi2 * sqrt(xi1);
+    
+    let sampled_point = alpha * v0 + beta * v1 + gamma * v2;
 
-        let xc = (v0 + v1 + v2) / 3.0;
-        let vec = xc - p;
-        let r = length(vec);
-        if (r <= 1e-6) { continue; }
-        let wi = normalize(vec);
-
-        let matId = face.w;
-        let Le = materials[matId].emission.xyz;
-        if (length(Le) < 1e-6) { continue; }
-
-        let cosS = max(dot(surface_normal, wi), 0.0);
-        if (cosS <= 0.0) { continue; }
-        
-        let cosL = max(dot(-wi, nL), 0.0);
-        if (cosL <= 0.0) { continue; }
-
-        let shadow_tmax = max(r - 1.0, 1.0);
-        var shadowRay = Ray(p, wi, 1.0, shadow_tmax);
-        var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0);
-        if (intersect_scene(&shadowRay, &shadowHit)) { continue; }
-
-        let E = Le * (A * cosL) / (r * r);
-        let contrib = brdf * E * cosS;
-        sum += contrib;
+    let e1 = v1 - v0;
+    let e2 = v2 - v0;
+    let nL = normalize(cross(e1, e2));
+    let A = 0.5 * length(cross(e1, e2));
+    
+    if (A <= 0.0) {
+        return vec3f(0.0);
     }
 
-    return sum;
+    let light_vec = sampled_point - p;
+    let dist = length(light_vec);
+    if (dist <= 1e-6) {
+        return vec3f(0.0);
+    }
+    let wi = normalize(light_vec);
+
+    let matId = face.w;
+    let Le = materials[matId].emission.xyz;
+    if (length(Le) < 1e-6) {
+        return vec3f(0.0);
+    }
+
+    let cosS = max(dot(surface_normal, wi), 0.0);
+    if (cosS <= 0.0) {
+        return vec3f(0.0);
+    }
+    
+    let cosL = max(dot(-wi, nL), 0.0);
+    if (cosL <= 0.0) {
+        return vec3f(0.0);
+    }
+
+    let shadow_tmax = max(dist - 1e-3, 1e-3);
+    var shadowRay = Ray(p + surface_normal * 1e-4, wi, 1e-4, shadow_tmax);
+    var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0);
+    if (intersect_scene(&shadowRay, &shadowHit)) {
+        return vec3f(0.0);
+    }
+
+    let G = cosL / (dist * dist);
+    let contrib = Le * G * brdf * cosS * f32(nLights) * A;
+    
+    return contrib;
 }
 
 fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: vec3f, radius: f32, shader_type: i32, iof_val: f32) -> bool {
@@ -338,8 +356,8 @@ fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: 
     return true;
 }
 
-fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-    return (*hit).emission + sample_area_lights(r, hit);
+fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
+    return (*hit).emission + sample_area_lights(r, hit, seed);
 }
 
 fn tea(val0: u32, val1: u32) -> u32 {
@@ -426,7 +444,7 @@ fn fs_main(input: VertexOutput) -> FragOut {
     for (var depth = 0; depth < max_depth; depth = depth + 1) {
         if (intersect_scene(&ray, &hit)) {
             if (hit.shader == 0) {
-                color = shade(&ray, &hit);
+                color = shade(&ray, &hit, &seed);
                 break;
             } else if (hit.shader == 1) {
                 color = mirror_shader(&ray, &hit);
