@@ -3,16 +3,24 @@ struct Uniforms {
     cameraConstant: f32,
     repeat: f32,
     filterMode: f32,
+
     eye: vec3f,
     useTexture: f32,
+
     up: vec3f,
     scaleFactor: f32,
+
     at: vec3f,
     jitterVectorCount: f32,
+
     gamma: f32,
     frame: f32,
+
     canvas_width: f32,
     canvas_height: f32,
+
+    useBlueBackground: f32,
+    _pad: vec3f,
 };
 
 struct Aabb {
@@ -36,6 +44,8 @@ struct HitInfo {
     emission: vec3f,
     shader: i32,
     iof: f32,
+    emit: bool,
+    throughput: vec3f,
 };
 
 struct JitterBuffer {
@@ -52,18 +62,18 @@ struct Material {
     diffuse: vec4f,
 };
 
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var my_texture: texture_2d<f32>;
-@group(0) @binding(2) var<storage, read> jitters: JitterBuffer;
-@group(0) @binding(3) var<storage, read> attribs: array<VertexAttribs>;
-@group(0) @binding(4) var<storage, read> meshFaces: array<vec4u>;
-@group(0) @binding(5) var<storage, read> materials: array<Material>;
-@group(0) @binding(6) var<storage, read> lightIndices: array<u32>;
-@group(0) @binding(7) var<storage, read> treeIds: array<u32>;
-@group(0) @binding(8) var<storage, read> bspTree: array<vec4u>;
-@group(0) @binding(9) var<storage, read> bspPlanes: array<f32>;
+@group(0) @binding(0)  var<uniform> uniforms: Uniforms;
+@group(0) @binding(1)  var my_texture: texture_2d<f32>;
+@group(0) @binding(2)  var<storage, read> jitters: JitterBuffer;
+@group(0) @binding(3)  var<storage, read> attribs: array<VertexAttribs>;
+@group(0) @binding(4)  var<storage, read> meshFaces: array<vec4u>;
+@group(0) @binding(5)  var<storage, read> materials: array<Material>;
+@group(0) @binding(6)  var<storage, read> lightIndices: array<u32>;
+@group(0) @binding(7)  var<storage, read> treeIds: array<u32>;
+@group(0) @binding(8)  var<storage, read> bspTree: array<vec4u>;
+@group(0) @binding(9)  var<storage, read> bspPlanes: array<f32>;
 @group(0) @binding(10) var<uniform> aabb: Aabb;
-@group(0) @binding(11) var renderTexture: texture_2d<f32>;
+@group(0) @binding(11) var renderTexture: texture_2d<f32>;        
 
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
@@ -127,7 +137,6 @@ fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, face_i
     if (v < -EPS || u + v > 1.0 + EPS) { return false; }
 
     let t = dot(e1, qvec) * invDet;
-
     if (!(t >= (*r).tmin - 1e-6 && t <= (*r).tmax + 1e-6)) { return false; }
 
     let w0 = 1.0 - u - v;
@@ -147,10 +156,10 @@ fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, face_i
     (*hit).emission = mat.emission.xyz;
     (*hit).shader   = 0;
     (*hit).iof      = 1.0;
+    (*hit).emit     = true;
+    (*hit).throughput = vec3f(1.0);
     return true;
 }
-
-
 
 const MAX_LEVEL: u32 = 20u;
 const BSP_LEAF: u32 = 3u;
@@ -201,7 +210,7 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
         var far_node = right_id;
         if (dir_a < 0.0) {
             near_node = right_id;
-            far_node = left_id;
+            far_node  = left_id;
         }
 
         let denom = select(dir_a, 1.0e-8, abs(dir_a) < 1.0e-8);
@@ -226,7 +235,7 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
 }
 
 fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-    // Left sphere
+     // Left sphere
     /*let left_sphere_center = vec3f(420.0, 90.0, 370.0);
     let left_sphere_radius = 90.0;
     if (intersect_sphere(r, hit, left_sphere_center, left_sphere_radius, 1, 1.0)) {
@@ -239,19 +248,59 @@ fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
     if (intersect_sphere(r, hit, right_sphere_center, right_sphere_radius, 2, 1.5)) {
         (*r).tmax = (*hit).dist;
     }*/
-    
-    // Intersect with trimesh (Cornell box)
+
     if (intersect_aabb_clip(r)) {
         if (intersect_trimesh(r, hit)) {
             (*r).tmax = (*hit).dist;
         }
     }
-    
     return (*hit).has_hit;
+}
+
+fn tea(val0: u32, val1: u32) -> u32 {
+    const N: u32 = 16u;
+    var v0 = val0;
+    var v1 = val1;
+    var s0: u32 = 0u;
+    for (var n = 0u; n < N; n = n + 1u) {
+        s0 += 0x9e3779b9u;
+        v0 += ((v1 << 4u) + 0xa341316cu) ^ (v1 + s0) ^ ((v1 >> 5u) + 0xc8013ea4u);
+        v1 += ((v0 << 4u) + 0xad90777du) ^ (v0 + s0) ^ ((v0 >> 5u) + 0x7e95761eu);
+    }
+    return v0;
+}
+
+fn mcg31(prev: ptr<function, u32>) -> u32 {
+    const A: u32 = 1977654935u;
+    *prev = (A * (*prev)) & 0x7fffffffu;
+    return *prev;
+}
+
+fn rnd(prev: ptr<function, u32>) -> f32 {
+    return f32(mcg31(prev)) / f32(0x80000000u);
+}
+
+fn sample_cosine_hemisphere(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
+    const PI = 3.14159265359;
+    let xi1 = rnd(seed);
+    let xi2 = rnd(seed);
+    let r = sqrt(xi1);
+    let theta = 2.0 * PI * xi2;
+    let x = r * cos(theta);
+    let y = r * sin(theta);
+    let z = sqrt(1.0 - xi1);
+
+    let w = normalize(normal);
+    let a = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(w.x) > 0.1);
+    let u = normalize(cross(a, w));
+    let v = cross(w, u);
+
+    return normalize(x * u + y * v + z * w);
 }
 
 fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
     const PI = 3.14159265359;
+
     let nLights = arrayLength(&lightIndices);
     if (nLights == 0u) {
         return vec3f(0.0);
@@ -262,9 +311,9 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: 
     let p = (*hit).position;
     let brdf = surface_diffuse / PI;
 
-    let light_idx = u32(rnd(seed) * f32(nLights));
-    let clamped_idx = min(light_idx, nLights - 1u);
-    let fidx = lightIndices[clamped_idx];
+    let li = u32(rnd(seed) * f32(nLights));
+    let idx = min(li, nLights - 1u);
+    let fidx = lightIndices[idx];
     let face = meshFaces[fidx];
 
     let v0 = attribs[face.x].position.xyz;
@@ -273,125 +322,50 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: 
 
     let xi1 = rnd(seed);
     let xi2 = rnd(seed);
-    let alpha = 1.0 - sqrt(xi1);
-    let beta = (1.0 - xi2) * sqrt(xi1);
-    let gamma = xi2 * sqrt(xi1);
-    
-    let sampled_point = alpha * v0 + beta * v1 + gamma * v2;
+    let a = 1.0 - sqrt(xi1);
+    let b = (1.0 - xi2) * sqrt(xi1);
+    let c = xi2 * sqrt(xi1);
+    let xc = a * v0 + b * v1 + c * v2;
 
     let e1 = v1 - v0;
     let e2 = v2 - v0;
     let nL = normalize(cross(e1, e2));
     let A = 0.5 * length(cross(e1, e2));
-    
-    if (A <= 0.0) {
-        return vec3f(0.0);
-    }
+    if (A <= 0.0) { return vec3f(0.0); }
 
-    let light_vec = sampled_point - p;
-    let dist = length(light_vec);
-    if (dist <= 1e-6) {
-        return vec3f(0.0);
-    }
-    let wi = normalize(light_vec);
+    let vecL = xc - p;
+    let rlen = length(vecL);
+    if (rlen <= 1e-6) { return vec3f(0.0); }
+    let wi = vecL / rlen;
 
     let matId = face.w;
     let Le = materials[matId].emission.xyz;
-    if (length(Le) < 1e-6) {
-        return vec3f(0.0);
-    }
+    if (length(Le) < 1e-6) { return vec3f(0.0); }
 
     let cosS = max(dot(surface_normal, wi), 0.0);
-    if (cosS <= 0.0) {
-        return vec3f(0.0);
-    }
-    
+    if (cosS <= 0.0) { return vec3f(0.0); }
+
     let cosL = max(dot(-wi, nL), 0.0);
-    if (cosL <= 0.0) {
-        return vec3f(0.0);
-    }
+    if (cosL <= 0.0) { return vec3f(0.0); }
 
-    let shadow_tmax = max(dist - 1e-3, 1e-3);
+    let shadow_tmax = max(rlen - 1e-3, 1e-3);
     var shadowRay = Ray(p + surface_normal * 1e-4, wi, 1e-4, shadow_tmax);
-    var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0);
-    if (intersect_scene(&shadowRay, &shadowHit)) {
-        return vec3f(0.0);
-    }
+    var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
+    if (intersect_scene(&shadowRay, &shadowHit)) { return vec3f(0.0); }
 
-    let G = cosL / (dist * dist);
-    let contrib = Le * G * brdf * cosS * f32(nLights) * A;
-    
+    let G = cosL / (rlen * rlen);
+    let contrib = brdf * Le * G * cosS * f32(nLights) * A;
+
     return contrib;
-}
-
-fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: vec3f, radius: f32, shader_type: i32, iof_val: f32) -> bool {
-    let oc = (*r).origin - center;
-    let b = dot(oc, (*r).direction);
-    let c = dot(oc, oc) - radius * radius;
-    let discriminant = b * b - c;
-    
-    if (discriminant < 0.0) { return false; }
-    
-    let sqrt_disc = sqrt(discriminant);
-    let t1 = -b - sqrt_disc;
-    let t2 = -b + sqrt_disc;
-    
-    var t = t1;
-    if (t < (*r).tmin || t > (*r).tmax) {
-        t = t2;
-        if (t < (*r).tmin || t > (*r).tmax) {
-            return false;
-        }
-    }
-    
-    (*hit).dist = t;
-    (*hit).position = (*r).origin + (*r).direction * t;
-    (*hit).normal = normalize((*hit).position - center);
-    (*hit).has_hit = true;
-    (*hit).diffuse = vec3f(0.0);
-    (*hit).emission = vec3f(0.0);
-    (*hit).shader = shader_type;
-    (*hit).iof = iof_val;
-    
-    return true;
-}
-
-fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
-    return (*hit).emission + sample_area_lights(r, hit, seed);
-}
-
-fn tea(val0: u32, val1: u32) -> u32 {
-    const N = 16u;
-    var v0 = val0;
-    var v1 = val1;
-    var s0 = 0u;
-    for (var n = 0u; n < N; n++) {
-        s0 += 0x9e3779b9;
-        v0 += ((v1 << 4) + 0xa341316c) ^ (v1 + s0) ^ ((v1 >> 5) + 0xc8013ea4);
-        v1 += ((v0 << 4) + 0xad90777d) ^ (v0 + s0) ^ ((v0 >> 5) + 0x7e95761e);
-    }
-    return v0;
-}
-
-fn mcg31(prev: ptr<function, u32>) -> u32 {
-    const LCG_A = 1977654935u;
-    *prev = (LCG_A * (*prev)) & 0x7FFFFFFFu;
-    return *prev;
-}
-
-fn rnd(prev: ptr<function, u32>) -> f32 {
-    return f32(mcg31(prev)) / f32(0x80000000u);
 }
 
 fn mirror_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     let reflected = reflect(normalize((*r).direction), normalize((*hit).normal));
-    
     (*hit).has_hit = false;
     (*r).direction = normalize(reflected);
     (*r).origin = (*hit).position;
     (*r).tmin = 1.0;
     (*r).tmax = 1e9;
-
     return vec3f(0.0);
 }
 
@@ -406,7 +380,6 @@ fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     (*r).tmin = 0.1;
     (*r).tmax = 1e9;
     (*hit).has_hit = false;
-    
     return vec3f(0.0);
 }
 
@@ -417,50 +390,71 @@ struct FragOut {
 
 @fragment
 fn fs_main(input: VertexOutput) -> FragOut {
-    let p = input.imagePlanePos;
+    let ix = u32(input.position.x);
+    let iy = u32(input.position.y);
+    let launch_idx = iy * u32(uniforms.canvas_width) + ix;
+    var seed = tea(launch_idx, u32(uniforms.frame));
+
+    let jx = rnd(&seed) - 0.5;
+    let jy = rnd(&seed) - 0.5;
+    let p = input.imagePlanePos + vec2f(jx / uniforms.canvas_height,
+                                        jy / uniforms.canvas_height);
+
     let cam = orthonormal_camera_basis();
     let u = cam[0];
     let v = cam[1];
     let w = cam[2];
-
-    let origin = uniforms.eye;
-    
-    let launch_idx = u32(input.position.x) + u32(input.position.y) * u32(uniforms.canvas_width);
-    var seed = tea(launch_idx, u32(uniforms.frame));
-    
-    let jitter_x = rnd(&seed) / uniforms.canvas_width;
-    let jitter_y = rnd(&seed) / uniforms.canvas_height;
-    
-    let aspect = uniforms.aspectRatio;
     let dir = normalize(-uniforms.cameraConstant * w
-                        + (p.x + jitter_x) * aspect * u
-                        + (p.y + jitter_y) * v);
+                        + p.x * uniforms.aspectRatio * u
+                        + p.y * v);
 
-    var ray = Ray(origin, dir, 1.0e-4, 1.0e5);
-    var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0);
-    var color = vec3f(0.1, 0.3, 0.6);
-    
-    const max_depth = 10;
+    var ray = Ray(uniforms.eye, dir, 1.0e-4, 1.0e5);
+    var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
+
+    var color = vec3f(0.0);
+    var throughput = vec3f(1.0);
+    var add_emission = true;
+
+    const max_depth = 4;
     for (var depth = 0; depth < max_depth; depth = depth + 1) {
         if (intersect_scene(&ray, &hit)) {
-            if (hit.shader == 0) {
-                color = shade(&ray, &hit, &seed);
-                break;
-            } else if (hit.shader == 1) {
-                color = mirror_shader(&ray, &hit);
-            } else if (hit.shader == 2) {
-                color = refract_shader(&ray, &hit);
+            if (add_emission) {
+                color += throughput * hit.emission;
             }
+
+            let direct = sample_area_lights(&ray, &hit, &seed);
+            color += throughput * direct;
+
+            let n = normalize(hit.normal);
+            let new_dir = sample_cosine_hemisphere(n, &seed);
+
+            throughput *= hit.diffuse;
+
+            let p_survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 0.99);
+            if (rnd(&seed) > p_survive) {
+                break;
+            }
+            throughput /= p_survive;
+
+            ray.origin = hit.position + n * 1e-4;
+            ray.direction = new_dir;
+            ray.tmin = 1e-4;
+            ray.tmax = 1e5;
+
+            add_emission = false;
         } else {
+            let bg = select(vec3f(0.0), vec3f(0.1, 0.3, 0.6), uniforms.useBlueBackground > 0.5);
+            color += throughput * bg;
             break;
         }
     }
-    
-    let curr_sum = color;
-    let prev_color = textureLoad(renderTexture, vec2u(input.position.xy), 0).rgb;
-    let accum_color = (prev_color * uniforms.frame + curr_sum) / (uniforms.frame + 1.0);
-    
+
+    let prev = textureLoad(renderTexture, vec2u(ix, iy), 0).rgb;
+    let accum_color = (prev * uniforms.frame + color) / (uniforms.frame + 1.0);
+
+    var out: FragOut;
     let gamma = max(uniforms.gamma, 1.0);
-    let mapped = pow(accum_color, vec3f(1.0 / gamma));
-    return FragOut(vec4f(mapped, 1.0), vec4f(accum_color, 1.0));
+    out.color = vec4f(pow(accum_color, vec3f(1.0 / gamma)), 1.0);
+    out.accum = vec4f(accum_color, 1.0);
+    return out;
 }

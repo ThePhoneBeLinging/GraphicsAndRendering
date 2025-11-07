@@ -99,7 +99,7 @@ async function main() {
     const at = [277.0, 275.0, 0.0];
     const up = [0.0, 1.0, 0.0];
 
-    const uniformData = new Float32Array(20);
+    const uniformData = new Float32Array(24);
     uniformData[0] = aspectRatio;
     uniformData[1] = cameraConstant;
     uniformData[2] = 0;
@@ -120,12 +120,17 @@ async function main() {
     uniformData[17] = 0;
     uniformData[18] = canvas.width;
     uniformData[19] = canvas.height;
+    uniformData[20] = 1.0;
+    uniformData[21] = 0;
+    uniformData[22] = 0;
+    uniformData[23] = 0; 
 
     let frameNumber = 0;
     let progressiveEnabled = true;
+    let useBlueBackground = true;
 
     const uniformBuffer = device.createBuffer({
-        size: 96,
+        size: 128,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true
     });
@@ -288,6 +293,22 @@ async function main() {
             progressiveEnabled = progressiveCheckbox.checked;
             resetFrameCounter();
             if (progressiveEnabled) {
+                render();
+            }
+        });
+    }
+
+    const blueBackgroundCheckbox = document.getElementById('blue-background');
+    if (blueBackgroundCheckbox) {
+        blueBackgroundCheckbox.checked = useBlueBackground;
+        blueBackgroundCheckbox.addEventListener('change', () => {
+            useBlueBackground = blueBackgroundCheckbox.checked;
+            uniformData[20] = useBlueBackground ? 1.0 : 0.0;
+            device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+            resetFrameCounter();
+            if (progressiveEnabled) {
+                render();
+            } else {
                 render();
             }
         });
