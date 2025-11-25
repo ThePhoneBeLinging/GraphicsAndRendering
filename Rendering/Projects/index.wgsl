@@ -228,14 +228,14 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
 
 fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
     // Left sphere - mirror at (420, 90, 370) radius 90
-    let left_sphere_center = vec3f(420.0, 90.0, 370.0);
+    let left_sphere_center = vec3f(277.0, 220.0, 277.0);
     let left_sphere_radius = 90.0;
     if (intersect_sphere(r, hit, left_sphere_center, left_sphere_radius, 1, 1.0)) {
         (*r).tmax = (*hit).dist;
     }
     
     // Right sphere - glass at (130, 90, 250) radius 90, ior 1.5
-    let right_sphere_center = vec3f(130.0, 90.0, 250.0);
+    let right_sphere_center = vec3f(130.0, 90.0, 120.0);
     let right_sphere_radius = 90.0;
     if (intersect_sphere(r, hit, right_sphere_center, right_sphere_radius, 2, 1.5)) {
         (*r).tmax = (*hit).dist;
