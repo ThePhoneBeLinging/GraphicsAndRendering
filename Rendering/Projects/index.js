@@ -29,38 +29,34 @@ async function main() {
     new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
     vertexBuffer.unmap();
 
-    function compute_jitters(jitter, pixelsize, subdivs) {
-        const step = pixelsize / subdivs;
-        if (subdivs < 2) {
-            jitter[0] = 0.0;
-            jitter[1] = 0.0;
-        } else {
-            for (let i = 0; i < subdivs; ++i)
-                for (let j = 0; j < subdivs; ++j) {
-                    const idx = (i * subdivs + j) * 2;
-                    jitter[idx] = (Math.random() + j) * step - pixelsize * 0.5;
-                    jitter[idx + 1] = (Math.random() + i) * step - pixelsize * 0.5;
-                }
+    function compute_jitters(jitter, subdivs) {
+        const step = 1.0 / subdivs;
+        for (let i = 0; i < subdivs; ++i) {
+            for (let j = 0; j < subdivs; ++j) {
+                const idx = (i * subdivs + j) * 2;
+                jitter[idx]     = (j + Math.random()) * step; // in [0,1)
+                jitter[idx + 1] = (i + Math.random()) * step; // in [0,1)
+            }
         }
     }
 
     const MODEL_PRESETS = {
         teapot: {
-            file: '../objects/teapot.obj',
+            file: 'objects/teapot.obj',
             eye: [0.15, 1.5, 10.0],
             at: [0.15, 1.5, 0.0],
             up: [0.0, 1.0, 0.0],
             cameraConstant: 2.5,
         },
         bunny: {
-            file: '../objects/bunny.obj',
+            file: 'objects/bunny.obj',
             eye: [-0.02, 0.11, 0.6],
             at: [-0.02, 0.11, 0.0],
             up: [0.0, 1.0, 0.0],
             cameraConstant: 3.5,
         },
         cornellbox: {
-            file: '../objects/CornellBox.obj',
+            file: 'objects/CornellBox.obj',
             eye: [277.0, 275.0, -570.0],
             at: [277.0, 275.0, 0.0],
             up: [0.0, 1.0, 0.0],
@@ -99,6 +95,9 @@ async function main() {
     const at = [277.0, 275.0, 0.0];
     const up = [0.0, 1.0, 0.0];
 
+    const focusDistance = 100.0;
+    const lensRadius = 0.0;
+
     const uniformData = new Float32Array(20);
     uniformData[0] = aspectRatio;
     uniformData[1] = cameraConstant;
@@ -117,9 +116,12 @@ async function main() {
     uniformData[14] = at[2];
     uniformData[15] = 1;
     uniformData[16] = gamma;
-    uniformData[17] = 0;
-    uniformData[18] = 0;
+    uniformData[17] = focusDistance;
+    uniformData[18] = lensRadius;
     uniformData[19] = 0;
+    uniformData[20] = 0;
+    uniformData[21] = 0;
+    uniformData[22] = 0;
 
     const uniformBuffer = device.createBuffer({
         size: 96,
@@ -252,10 +254,9 @@ async function main() {
     });
 
     function updateJitterBuffer() {
-        const pixelSizeNDC = 2 / canvas.height;
-        compute_jitters(jitter, pixelSizeNDC, subdivLevel);
+        compute_jitters(jitter, subdivLevel);
         const vecCount = subdivLevel * subdivLevel;
-        uniformData[15] = vecCount;
+        uniformData[15] = vecCount;          // jitterVectorCount
         device.queue.writeBuffer(uniformBuffer, 0, uniformData);
         const byteLength = vecCount * 2 * 4;
         device.queue.writeBuffer(jitterBuffer, 0, jitter, 0, byteLength / 4);

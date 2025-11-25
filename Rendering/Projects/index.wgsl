@@ -10,6 +10,8 @@ struct Uniforms {
     at: vec3f,
     jitterVectorCount: f32,
     gamma: f32,
+    focusDistance: f32,
+    lensRadius: f32,
     _pad5: vec3f,
 };
 
@@ -49,6 +51,8 @@ struct Material {
     emission: vec4f,
     diffuse: vec4f,
 };
+
+const PI : f32 = 3.14159265359;
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var my_texture: texture_2d<f32>;
@@ -134,14 +138,14 @@ fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, face_i
     let interpN = normalize(n0 * w0 + n1 * u + n2 * v);
 
     let mid = face.w;
-    let mat = materials[mid];
+    let material = materials[mid];
 
     (*hit).has_hit  = true;
     (*hit).dist     = t;
     (*hit).position = (*r).origin + (*r).direction * t;
     (*hit).normal   = interpN;
-    (*hit).diffuse  = mat.diffuse.xyz;
-    (*hit).emission = mat.emission.xyz;
+    (*hit).diffuse  = material.diffuse.xyz;
+    (*hit).emission = material.emission.xyz;
     (*hit).shader   = 0;
     (*hit).iof      = 1.0;
     return true;
@@ -248,7 +252,6 @@ fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
 }
 
 fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-    const PI = 3.14159265359;
     let nLights = arrayLength(&lightIndices);
     if (nLights == 0u) {
         return vec3f(0.0);
@@ -275,10 +278,10 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec
         if (A <= 0.0) { continue; }
 
         let xc = (v0 + v1 + v2) / 3.0;
-        let vec = xc - p;
-        let r = length(vec);
+        let vec_xcp = xc - p;
+        let r = length(vec_xcp);
         if (r <= 1e-6) { continue; }
-        let wi = normalize(vec);
+        let wi = normalize(vec_xcp);
 
         let matId = face.w;
         let Le = materials[matId].emission.xyz;
@@ -366,6 +369,28 @@ fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     return vec3f(0.0);
 }
 
+fn concentricSampleDisk(u: vec2f) -> vec2f {
+
+    // map [0,1]^2 to [-1,1]^2
+    let uOffset = 2.0 * u - vec2f(1.0, 1.0);
+    if (uOffset.x == 0.0 && uOffset.y == 0.0) {
+        return vec2f(0.0, 0.0);
+    }
+
+    var r: f32;
+    var theta: f32;
+
+    if (abs(uOffset.x) > abs(uOffset.y)) {
+        r = uOffset.x;
+        theta = (PI / 4.0) * (uOffset.y / uOffset.x);
+    } else {
+        r = uOffset.y;
+        theta = (PI / 2.0) - (PI / 4.0) * (uOffset.x / uOffset.y);
+    }
+
+    return r * vec2f(cos(theta), sin(theta));
+}
+
 struct FragOut {
     @location(0) color: vec4f
 };
@@ -385,16 +410,35 @@ fn fs_main(input: VertexOutput) -> FragOut {
     let JV = min(u32(uniforms.jitterVectorCount), maxJ);
     let aspect = uniforms.aspectRatio;
 
-    for (var i = 0u; i < JV; i = i + 1u) {
-        let j = jitters.data[i];
-        let dir = normalize(-uniforms.cameraConstant * w
-                            + (p.x + j.x) * aspect * u
-                            + (p.y + j.y) * v);
+    let focusDist  = uniforms.focusDistance;
+    let lensRadius = uniforms.lensRadius;
 
-        var ray = Ray(origin, dir, 1.0e-4, 1.0e5);
+    for (var i = 0u; i < JV; i = i + 1u) {
+        let samplepample = jitters.data[i];              // in [0,1]^2
+        let lensUv = concentricSampleDisk(samplepample); // in disk [-1,1]^2
+
+        // Pinhole direction corresponding to this pixel (no subpixel jitter for now)
+        let dirPinhole = normalize(
+            -uniforms.cameraConstant * w +
+            p.x * aspect * u +
+            p.y * v
+        );
+
+        // Point on the focal plane along the pinhole ray
+        let focusPoint = origin + dirPinhole * focusDist;
+
+        // Sample point on the lens
+        let lensPos = origin
+                    + lensUv.x * lensRadius * u
+                    + lensUv.y * lensRadius * v;
+
+        // New ray points from lens sample to the focus point
+        let dir = normalize(focusPoint - lensPos);
+
+        var ray = Ray(lensPos, dir, 1.0e-4, 1.0e5);
         var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0);
         var color = vec3f(0.1, 0.3, 0.6);
-        
+
         const max_depth = 10;
         for (var depth = 0; depth < max_depth; depth = depth + 1) {
             if (intersect_scene(&ray, &hit)) {
