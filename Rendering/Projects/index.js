@@ -91,16 +91,15 @@ async function main() {
     let currentModel = 'teapot';
     let aspectRatio = canvas.width / canvas.height;
     let cameraConstant = parseFloat(cameraConstantValue.value);
-    let gamma = parseFloat(gammaValue.value);
-    gamma = 2.4;
+    let gamma = parseFloat(gammaValue.value) || 1.4;
     cameraConstant = 1.0;
 
     const eye = [277.0, 275.0, -570.0];
     const at = [277.0, 275.0, 0.0];
     const up = [0.0, 1.0, 0.0];
 
-    let focusDistance = 100.0;
-    let lensRadius = 0.0;
+    let focusDistance = 926.0;
+    let lensRadius = 24.0;
 
     const uniformData = new Float32Array(24);
     uniformData[0] = aspectRatio;
@@ -393,27 +392,6 @@ async function main() {
         cameraConstant = cc;
         if (cameraConstantSlider) cameraConstantSlider.value = String(cc);
         if (cameraConstantValue) cameraConstantValue.textContent = cc.toFixed(2);
-
-        if (focusSlider && focusValue) {
-            const defaultFocusRaw = Math.hypot(
-                eye[0] - at[0],
-                eye[1] - at[1],
-                eye[2] - at[2]
-            );
-            const minFocus = parseFloat(focusSlider.min);
-            const maxFocus = parseFloat(focusSlider.max);
-            const clampedFocus = Math.min(Math.max(defaultFocusRaw, minFocus), maxFocus);
-            focusDistance = clampedFocus;
-            focusSlider.value = clampedFocus.toFixed(0);
-            focusValue.textContent = clampedFocus.toFixed(1);
-            uniformData[17] = focusDistance;
-        }
-
-        if (apertureSlider && apertureValue) {
-            apertureSlider.value = lensRadius.toFixed(2);
-            apertureValue.textContent = lensRadius.toFixed(2);
-        }
-
         device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
         bindGroup = device.createBindGroup({
