@@ -62,6 +62,14 @@ async function main() {
             up: [0.0, 1.0, 0.0],
             cameraConstant: 1.0,
         },
+        cornellbox_lens_showcase: {
+            file: 'objects/CornellBox.obj',
+            // Pull the camera closer and slightly offset to emphasize depth of field.
+            eye: [220.0, 200.0, -250.0],
+            at: [220.0, 200.0, 200.0],
+            up: [0.0, 1.0, 0.0],
+            cameraConstant: 1.5,
+        },
     };
 
     let subdivLevel = 2;
@@ -418,8 +426,18 @@ async function main() {
     await loadModelAndRebind('cornellbox');
     if (modelSelect) {
         modelSelect.value = 'cornellbox';
+
+        // Append a hidden/extra option that showcases the lens.
+        const awesomeOption = document.createElement('option');
+        awesomeOption.value = 'cornellbox_lens_showcase';
+        awesomeOption.textContent = 'Cornell Box (Lens Showcase)';
+        modelSelect.appendChild(awesomeOption);
+
         modelSelect.addEventListener('change', async (e) => {
-            await loadModelAndRebind(e.target.value);
+            const key = e.target.value;
+            if (MODEL_PRESETS[key]) {
+                await loadModelAndRebind(key);
+            }
         });
     }
 
