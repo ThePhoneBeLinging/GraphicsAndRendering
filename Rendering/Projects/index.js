@@ -34,8 +34,8 @@ async function main() {
         for (let i = 0; i < subdivs; ++i) {
             for (let j = 0; j < subdivs; ++j) {
                 const idx = (i * subdivs + j) * 2;
-                jitter[idx]     = (j + Math.random()) * step; // in [0,1)
-                jitter[idx + 1] = (i + Math.random()) * step; // in [0,1)
+                jitter[idx]     = (j + Math.random()) * step;
+                jitter[idx + 1] = (i + Math.random()) * step;
             }
         }
     }
@@ -82,6 +82,10 @@ async function main() {
     const filterMode = document.getElementById('sunday');
     const useTexture = document.getElementById('use-texture');
     const modelSelect = document.getElementById('model');
+    const focusSlider = document.getElementById('focus-distance');
+    const focusValue = document.getElementById('focus-distance-value');
+    const apertureSlider = document.getElementById('aperture');
+    const apertureValue = document.getElementById('aperture-value');
 
     let buffers = {};
     let currentModel = 'teapot';
@@ -95,10 +99,10 @@ async function main() {
     const at = [277.0, 275.0, 0.0];
     const up = [0.0, 1.0, 0.0];
 
-    const focusDistance = 100.0;
-    const lensRadius = 0.0;
+    let focusDistance = 100.0;
+    let lensRadius = 0.0;
 
-    const uniformData = new Float32Array(20);
+    const uniformData = new Float32Array(24);
     uniformData[0] = aspectRatio;
     uniformData[1] = cameraConstant;
     uniformData[2] = 0;
@@ -122,6 +126,7 @@ async function main() {
     uniformData[20] = 0;
     uniformData[21] = 0;
     uniformData[22] = 0;
+    uniformData[23] = 0;
 
     const uniformBuffer = device.createBuffer({
         size: 96,
@@ -247,6 +252,34 @@ async function main() {
         updateTextureScaling();
     });
 
+    if (focusSlider && focusValue) {
+        const updateFocus = (value) => {
+            focusDistance = value;
+            focusValue.textContent = value.toFixed(1);
+            uniformData[17] = focusDistance;
+            device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+            render();
+        };
+        focusSlider.addEventListener('input', () => {
+            updateFocus(parseFloat(focusSlider.value));
+        });
+        updateFocus(parseFloat(focusSlider.value));
+    }
+
+    if (apertureSlider && apertureValue) {
+        const updateAperture = (value) => {
+            lensRadius = value;
+            apertureValue.textContent = value.toFixed(2);
+            uniformData[18] = lensRadius;
+            device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+            render();
+        };
+        apertureSlider.addEventListener('input', () => {
+            updateAperture(parseFloat(apertureSlider.value));
+        });
+        updateAperture(parseFloat(apertureSlider.value));
+    }
+
     addEventListener("wheel", (event) => {
         cameraConstant *= 1.0 + 2.5e-4 * event.deltaY;
         uniformData[1] = cameraConstant;
@@ -360,6 +393,26 @@ async function main() {
         cameraConstant = cc;
         if (cameraConstantSlider) cameraConstantSlider.value = String(cc);
         if (cameraConstantValue) cameraConstantValue.textContent = cc.toFixed(2);
+
+        if (focusSlider && focusValue) {
+            const defaultFocusRaw = Math.hypot(
+                eye[0] - at[0],
+                eye[1] - at[1],
+                eye[2] - at[2]
+            );
+            const minFocus = parseFloat(focusSlider.min);
+            const maxFocus = parseFloat(focusSlider.max);
+            const clampedFocus = Math.min(Math.max(defaultFocusRaw, minFocus), maxFocus);
+            focusDistance = clampedFocus;
+            focusSlider.value = clampedFocus.toFixed(0);
+            focusValue.textContent = clampedFocus.toFixed(1);
+            uniformData[17] = focusDistance;
+        }
+
+        if (apertureSlider && apertureValue) {
+            apertureSlider.value = lensRadius.toFixed(2);
+            apertureValue.textContent = lensRadius.toFixed(2);
+        }
 
         device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
