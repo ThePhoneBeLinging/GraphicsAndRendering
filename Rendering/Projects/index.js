@@ -64,7 +64,6 @@ async function main() {
         },
         cornellbox_lens_showcase: {
             file: 'objects/CornellBox.obj',
-            // Pull the camera closer and slightly offset to emphasize depth of field.
             eye: [220.0, 200.0, -250.0],
             at: [220.0, 200.0, 200.0],
             up: [0.0, 1.0, 0.0],
@@ -423,11 +422,9 @@ async function main() {
     }
 
     updateJitterBuffer();
-    await loadModelAndRebind('cornellbox');
+    await loadModelAndRebind('cornellbox_lens_showcase');
     if (modelSelect) {
         modelSelect.value = 'cornellbox';
-
-        // Append a hidden/extra option that showcases the lens.
         const awesomeOption = document.createElement('option');
         awesomeOption.value = 'cornellbox_lens_showcase';
         awesomeOption.textContent = 'Cornell Box (Lens Showcase)';
