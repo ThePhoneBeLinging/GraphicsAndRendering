@@ -370,8 +370,6 @@ fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
 }
 
 fn concentricSampleDisk(u: vec2f) -> vec2f {
-
-    // map [0,1]^2 to [-1,1]^2
     let uOffset = 2.0 * u - vec2f(1.0, 1.0);
     if (uOffset.x == 0.0 && uOffset.y == 0.0) {
         return vec2f(0.0, 0.0);
@@ -414,25 +412,21 @@ fn fs_main(input: VertexOutput) -> FragOut {
     let lensRadius = uniforms.lensRadius;
 
     for (var i = 0u; i < JV; i = i + 1u) {
-        let samplepample = jitters.data[i];              // in [0,1]^2
-        let lensUv = concentricSampleDisk(samplepample); // in disk [-1,1]^2
+        let samplepample = jitters.data[i];
+        let lensUv = concentricSampleDisk(samplepample);
 
-        // Pinhole direction corresponding to this pixel (no subpixel jitter for now)
         let dirPinhole = normalize(
             -uniforms.cameraConstant * w +
             p.x * aspect * u +
             p.y * v
         );
 
-        // Point on the focal plane along the pinhole ray
         let focusPoint = origin + dirPinhole * focusDist;
 
-        // Sample point on the lens
         let lensPos = origin
                     + lensUv.x * lensRadius * u
                     + lensUv.y * lensRadius * v;
 
-        // New ray points from lens sample to the focus point
         let dir = normalize(focusPoint - lensPos);
 
         var ray = Ray(lensPos, dir, 1.0e-4, 1.0e5);
