@@ -424,11 +424,14 @@ async function main() {
     updateJitterBuffer();
     await loadModelAndRebind('cornellbox_lens_showcase');
     if (modelSelect) {
-        modelSelect.value = 'cornellbox';
-        const awesomeOption = document.createElement('option');
-        awesomeOption.value = 'cornellbox_lens_showcase';
-        awesomeOption.textContent = 'Cornell Box (Lens Showcase)';
-        modelSelect.appendChild(awesomeOption);
+        let awesomeOption = Array.from(modelSelect.options).find(o => o.value === 'cornellbox_lens_showcase');
+        if (!awesomeOption) {
+            awesomeOption = document.createElement('option');
+            awesomeOption.value = 'cornellbox_lens_showcase';
+            awesomeOption.textContent = 'Cornell Box (Lens Showcase)';
+            modelSelect.appendChild(awesomeOption);
+        }
+        modelSelect.value = 'cornellbox_lens_showcase';
 
         modelSelect.addEventListener('change', async (e) => {
             const key = e.target.value;
