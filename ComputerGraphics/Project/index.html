@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>WebGPU MatCap Demo</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            color: #eee;
+            font-family: system-ui, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #topbar {
+            padding: 8px 12px;
+            background: #222;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+        }
+        #topbar label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        #gfx {
+            flex: 1;
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+<div id="topbar">
+    <label>
+        MatCap:
+        <select id="matcapSelect">
+            <option value="matcaps/lime.png">MatCap 1</option>
+            <option value="matcaps/dark.png">MatCap 2</option>
+        </select>
+    </label>
+
+    <label>
+        Mix
+        <input id="mixSlider" type="range" min="0" max="1" step="0.01" value="1">
+        <span id="mixValue">1.00</span>
+    </label>
+
+    <label>
+        Tint
+        <input id="tintColor" type="color" value="#ffffff">
+    </label>
+</div>
+
+<canvas id="gfx" width="800" height="600"></canvas>
+
+<script type="module" src="index.js"></script>
+</body>
+</html>

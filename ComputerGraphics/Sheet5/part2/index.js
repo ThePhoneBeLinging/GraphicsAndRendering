@@ -21,11 +21,6 @@ async function main() {
     const wire_indices = new Uint32Array(
         loadedThing.indices
     );
-
-    const positionData = flatten(positions);
-    const vertexBuffer = device.createBuffer({
-        size: positionData.byteLength,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(vertexBuffer, 0, positionData);
 
