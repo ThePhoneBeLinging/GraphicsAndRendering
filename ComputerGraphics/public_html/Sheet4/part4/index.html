@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sheet4 - Part 4</title>
+    <h1>Sheet4 - Part 4</h1>
+    <canvas height="512" width="512"></canvas>
+    <script src="../../../MV.js"></script>
+    <script type="module" src="index.js"></script>
+</head>
+<body>
+<label for="subdiv-level">Subdivision Level:</label>
+<button id="subdiv-dec">-</button>
+<span id="subdiv-value">1</span>
+<button id="subdiv-inc">+</button>
+<button id="orbit-toggle">Toggle Orbit</button>
+<br>
+<label for="le-slider">Le:</label>
+<input type="range" id="le-slider" min="0" max="2" step="0.01" value="1.0">
+<span id="le-value">2.0</span>
+
+<label for="la-slider">La:</label>
+<input type="range" id="la-slider" min="0" max="1" step="0.01" value="0.2">
+<span id="la-value">1.0</span>
+
+<label for="kd-slider">kd:</label>
+<input type="range" id="kd-slider" min="0" max="1" step="0.01" value="0.9">
+<span id="kd-value">1.0</span>
+
+<label for="ks-slider">ks:</label>
+<input type="range" id="ks-slider" min="0" max="1" step="0.01" value="1.0">
+<span id="ks-value">1.0</span>
+
+<label for="s-slider">s:</label>
+<input type="range" id="s-slider" min="1" max="1e3" step="1" value="2">
+<span id="s-value">1.0e3</span>
+
+</body>
+</html>
