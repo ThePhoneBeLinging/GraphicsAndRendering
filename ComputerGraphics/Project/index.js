@@ -1,16 +1,21 @@
-// main.js
+async function main() {
+    const canvas = document.getElementById('gfx');
+    const matcapSelect = document.getElementById('matcapSelect');
+    const mixSlider = document.getElementById('mixSlider');
+    const mixValue = document.getElementById('mixValue');
+    const tintColorInput = document.getElementById('tintColor');
+    const orbitToggle = document.getElementById('orbitToggle');
 
-const canvas = document.getElementById('gfx');
-const matcapSelect = document.getElementById('matcapSelect');
-const mixSlider = document.getElementById('mixSlider');
-const mixValue = document.getElementById('mixValue');
-const tintColorInput = document.getElementById('tintColor');
+    let orbiting = true;
+    let totalPausedTime = 0;
+    let pauseStart = 0;
+    let lastAngles = { angleY: 0, angleX: 0, angleZ: 0 };
+    let lastCam = { camX: 0, camY: 0, camZ: 0 };
 
-if (!navigator.gpu) {
-    alert('WebGPU not supported in this browser');
-}
+    if (!navigator.gpu) {
+        alert('WebGPU not supported in this browser');
+    }
 
-async function init() {
     const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter.requestDevice();
 
@@ -23,14 +28,11 @@ async function init() {
         alphaMode: 'opaque'
     });
 
-    // Depth texture
     let depthTexture = device.createTexture({
         size: [canvas.width, canvas.height],
         format: 'depth24plus',
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
-
-    // ======== Sphere geometry (positions + normals) ========
 
     const sphere = createSphere(1.0, 64, 32);
     const vertexBuffer = device.createBuffer({
@@ -47,16 +49,12 @@ async function init() {
 
     const indexCount = sphere.indices.length;
 
-    // ======== Uniform buffers ========
-
-    // ModelView + Projection (2 mat4 = 32 floats = 128 bytes)
     const uniformBufferSize = 4 * 16 * 2;
     const uniformBuffer = device.createBuffer({
         size: uniformBufferSize,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Params buffer: baseColor (vec3) + matcapMix + tintColor (vec3) + pad = 32 bytes
     const paramsBufferSize = 32;
     const paramsBuffer = device.createBuffer({
         size: paramsBufferSize,
@@ -64,22 +62,16 @@ async function init() {
     });
 
     const paramsData = new Float32Array(8);
-    // baseColor
     paramsData[0] = 1.0;
     paramsData[1] = 1.0;
     paramsData[2] = 1.0;
-    // matcapMix
     paramsData[3] = parseFloat(mixSlider.value);
-    // tintColor
     paramsData[4] = 1.0;
     paramsData[5] = 1.0;
     paramsData[6] = 1.0;
-    // pad
     paramsData[7] = 0.0;
 
     device.queue.writeBuffer(paramsBuffer, 0, paramsData);
-
-    // ======== Pipeline & shaders ========
 
     const shaderModule = device.createShaderModule({
         code: await (await fetch('index.wgsl')).text(),
@@ -121,7 +113,7 @@ async function init() {
             entryPoint: 'vs_main',
             buffers: [
                 {
-                    arrayStride: 6 * 4, // 3 pos + 3 normal
+                    arrayStride: 6 * 4,
                     attributes: [
                         {
                             shaderLocation: 0,
@@ -156,8 +148,6 @@ async function init() {
             depthCompare: 'less',
         },
     });
-
-    // ======== MatCap texture & sampler ========
 
     let matcapTexture = await loadTexture(device, matcapSelect.value);
     const sampler = device.createSampler({
@@ -194,8 +184,6 @@ async function init() {
         });
     }
 
-    // ======== UI handlers ========
-
     matcapSelect.addEventListener('change', async () => {
         matcapTexture = await loadTexture(device, matcapSelect.value);
         bindGroup = createBindGroup();
@@ -216,7 +204,15 @@ async function init() {
         device.queue.writeBuffer(paramsBuffer, 0, paramsData);
     });
 
-    // ======== Animation loop ========
+    orbitToggle.addEventListener('click', () => {
+        orbiting = !orbiting;
+        orbitToggle.textContent = orbiting ? 'Stop Orbit' : 'Resume Orbit';
+        if (!orbiting) {
+            pauseStart = performance.now();
+        } else {
+            totalPausedTime += performance.now() - pauseStart;
+        }
+    });
 
     let previousTime = 0;
 
@@ -225,23 +221,50 @@ async function init() {
         previousTime = time;
 
         const aspect = canvas.width / canvas.height;
-        const fov = (45 * Math.PI) / 180;
-        const near = 0.1;
-        const far = 100.0;
+        const fov= (60 * Math.PI) / 180;
+        const near= 0.1;
+        const far= 100.0;
 
-        // Camera + model
         const proj = mat4_perspective(fov, aspect, near, far);
+
+        let t = (time - totalPausedTime) * 0.001;
+
+        const radius = 4.0;
+        let camX, camY, camZ;
+        if (orbiting) {
+            camX = Math.cos(t * 0.4) * radius;
+            camZ = Math.sin(t * 0.4) * radius;
+            camY = 0.7 + 0.3 * Math.sin(t * 0.7);
+            lastCam = { camX, camY, camZ };
+        } else {
+            ({ camX, camY, camZ } = lastCam);
+        }
+
         const view = mat4_lookAt(
-            [0, 0, 3],
+            [camX, camY, camZ],
             [0, 0, 0],
             [0, 1, 0]
         );
 
-        const angle = time * 0.0005;
-        const model = mat4_rotationY(angle);
+        let angleY, angleX, angleZ;
+        if (orbiting) {
+            angleY = t * 0.9;
+            angleX = t * 0.6;
+            angleZ = t * 0.3;
+            lastAngles = { angleY, angleX, angleZ };
+        } else {
+            ({ angleY, angleX, angleZ } = lastAngles);
+        }
 
-        const modelView = mat4_multiply(view, model);
-        const uniformsData = new Float32Array(32);
+        const rotY= mat4_rotationY(angleY);
+        const rotX= mat4_rotationX(angleX);
+        const rotZ= mat4_rotationZ(angleZ);
+
+        const modelXY= mat4_multiply(rotY, rotX);
+        const model= mat4_multiply(modelXY, rotZ);
+
+        const modelView= mat4_multiply(view, model);
+        const uniformsData= new Float32Array(32);
         uniformsData.set(modelView, 0);
         uniformsData.set(proj, 16);
 
@@ -282,19 +305,17 @@ async function init() {
     requestAnimationFrame(frame);
 }
 
-// ======== Helper: create UV sphere ========
-
 function createSphere(radius, segments, rings) {
-    const vertices = [];
-    const indices = [];
+    const vertices= [];
+    const indices= [];
 
-    for (let y = 0; y <= rings; ++y) {
-        const v = y / rings;
-        const theta = v * Math.PI;
+    for (let y= 0; y <= rings; ++y) {
+        const v= y / rings;
+        const theta= v * Math.PI;
 
-        for (let x = 0; x <= segments; ++x) {
-            const u = x / segments;
-            const phi = u * 2.0 * Math.PI;
+        for (let x= 0; x <= segments; ++x) {
+            const u= x / segments;
+            const phi= u * 2.0 * Math.PI;
 
             const sinTheta = Math.sin(theta);
             const cosTheta = Math.cos(theta);
@@ -309,7 +330,6 @@ function createSphere(radius, segments, rings) {
             const py = radius * ny;
             const pz = radius * nz;
 
-            // position + normal
             vertices.push(px, py, pz, nx, ny, nz);
         }
     }
@@ -333,8 +353,6 @@ function createSphere(radius, segments, rings) {
     };
 }
 
-// ======== Helper: load texture ========
-
 async function loadTexture(device, url) {
     const response = await fetch(url);
     const blob = await response.blob();
@@ -355,8 +373,6 @@ async function loadTexture(device, url) {
     return texture;
 }
 
-// ======== Helper: hex color -> linear-ish RGB 0..1 ========
-
 function hexToRgb(hex) {
     const h = hex.replace('#', '');
     const r = parseInt(h.substring(0, 2), 16) / 255;
@@ -364,8 +380,6 @@ function hexToRgb(hex) {
     const b = parseInt(h.substring(4, 6), 16) / 255;
     return [r, g, b];
 }
-
-// ======== Minimal mat4 utilities (column-major) ========
 
 function mat4_identity() {
     const m = new Float32Array(16);
@@ -380,9 +394,9 @@ function mat4_multiply(a, b) {
         const ai1 = a[i + 4];
         const ai2 = a[i + 8];
         const ai3 = a[i + 12];
-        out[i]      = ai0 * b[0] + ai1 * b[1] + ai2 * b[2] + ai3 * b[3];
-        out[i + 4]  = ai0 * b[4] + ai1 * b[5] + ai2 * b[6] + ai3 * b[7];
-        out[i + 8]  = ai0 * b[8] + ai1 * b[9] + ai2 * b[10] + ai3 * b[11];
+        out[i] = ai0 * b[0] + ai1 * b[1] + ai2 * b[2] + ai3 * b[3];
+        out[i + 4] = ai0 * b[4] + ai1 * b[5] + ai2 * b[6] + ai3 * b[7];
+        out[i + 8] = ai0 * b[8] + ai1 * b[9] + ai2 * b[10] + ai3 * b[11];
         out[i + 12] = ai0 * b[12] + ai1 * b[13] + ai2 * b[14] + ai3 * b[15];
     }
     return out;
@@ -428,7 +442,6 @@ function mat4_lookAt(eye, center, up) {
     out[2] = xz; out[6] = yz; out[10] = zz; out[14] = ez;
     out[3] = 0;  out[7] = 0;  out[11] = 0;  out[15] = 1;
 
-    // Invert translation part
     out[12] = -(xx * ex + yx * ey + zx * ez);
     out[13] = -(xy * ex + yy * ey + zy * ez);
     out[14] = -(xz * ex + yz * ey + zz * ez);
@@ -447,5 +460,29 @@ function mat4_rotationY(angle) {
     return out;
 }
 
-// Kick off
-init().catch(err => console.error(err));
+function mat4_rotationX(angle) {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const out = mat4_identity();
+    out[5] = c;
+    out[6] = s;
+    out[9] = -s;
+    out[10] = c;
+    return out;
+}
+
+function mat4_rotationZ(angle) {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const out = mat4_identity();
+    out[0] = c;
+    out[1] = s;
+    out[4] = -s;
+    out[5] = c;
+    return out;
+}
+
+window.addEventListener('load', main);
+
+
+

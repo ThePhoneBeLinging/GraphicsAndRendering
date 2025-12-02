@@ -32,7 +32,6 @@ fn vs_main(input : VSIn) -> VSOut {
     let pos_world_view = uniforms.modelView * vec4<f32>(input.position, 1.0);
     out.position = uniforms.projection * pos_world_view;
 
-    // normal to view space (ignore translation)
     let normalMatrix = mat3x3<f32>(
         uniforms.modelView[0].xyz,
         uniforms.modelView[1].xyz,
@@ -53,12 +52,18 @@ fn fs_main(input : VSOut) -> FSOut {
 
     let N = normalize(input.normal_view);
 
-    // Map view-space normal.xy from [-1,1] to [0,1]
+    let lightDir = normalize(vec3<f32>(0.3, 0.8, 0.4));
+    let ndotl = max(dot(N, lightDir), 0.0);
+
+    let lighting = 0.25 + 0.75 * ndotl;
+
     var uv = N.xy * 0.5 + vec2<f32>(0.5, 0.5);
     uv = clamp(uv, vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0));
 
     var matcapColor = textureSample(matcapTex, matcapSampler, uv).rgb;
+
     matcapColor *= params.tintColor;
+    matcapColor *= lighting;
 
     let base = params.baseColor;
     let finalColor = mix(base, matcapColor, params.matcapMix);

@@ -39,8 +39,9 @@
     <label>
         MatCap:
         <select id="matcapSelect">
-            <option value="matcaps/lime.png">MatCap 1</option>
-            <option value="matcaps/dark.png">MatCap 2</option>
+            <option value="matcaps/lime.png">Lime</option>
+            <option value="matcaps/dark.png">Dark</option>
+            <option value="matcaps/sauron.png">Sauron</option>
         </select>
     </label>
 
@@ -54,10 +55,12 @@
         Tint
         <input id="tintColor" type="color" value="#ffffff">
     </label>
+    <button id="orbitToggle">Stop Orbit</button>
 </div>
 
 <canvas id="gfx" width="800" height="600"></canvas>
 
 <script type="module" src="index.js"></script>
+<script src="../../MV.js"></script>
 </body>
 </html>
