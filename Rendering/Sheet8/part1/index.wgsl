@@ -391,11 +391,6 @@ fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: 
     return true;
 }
 
-fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
-    let direct = sample_area_lights(r, hit, seed);
-    return (*hit).emission + direct;
-}
-
 fn fresnel_R(cos_theta_i: f32, cos_theta_t: f32, eta: f32) -> f32 {
     let sin_theta_i_sq = max(0.0, 1.0 - cos_theta_i * cos_theta_i);
     let sin_theta_t_sq = eta * eta * sin_theta_i_sq;
@@ -494,27 +489,37 @@ fn fs_main(input: VertexOutput) -> FragOut {
     var ray = Ray(uniforms.eye, dir, 1.0e-4, 1.0e5);
     var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
 
-    var color = vec3f(0.1, 0.3, 0.6);
+    var color = vec3f(0.0);
+    var throughput = vec3f(1.0);
+    var add_emission = true;
+
     const max_depth = 10;
     for (var depth = 0; depth < max_depth; depth = depth + 1) {
-        if (intersect_scene(&ray, &hit)) {
-            if (hit.shader == 0) {
-                color = shade(&ray, &hit, &seed);
-                break;
-            } else if (hit.shader == 1) {
-                mirror_shader(&ray, &hit);
-            } else if (hit.shader == 2) {
-                refract_shader(&ray, &hit);
-            } else if (hit.shader == 3) {
-                transparent_shader(&ray, &hit, &seed);
-            } else {
-                color = hit.emission;
-                break;
-            }
-        } else {
-            color = vec3f(0.1, 0.3, 0.6);
+        if (!intersect_scene(&ray, &hit)) {
+            let bg = vec3f(0.1, 0.3, 0.6);
+            color += throughput * bg;
             break;
         }
+
+        if (add_emission) {
+            color += throughput * hit.emission;
+        }
+
+        if (hit.shader == 0) {
+            let direct = sample_area_lights(&ray, &hit, &seed);
+            color += throughput * direct;
+            break;
+        } else if (hit.shader == 1) {
+            mirror_shader(&ray, &hit);
+        } else if (hit.shader == 2) {
+            refract_shader(&ray, &hit);
+        } else if (hit.shader == 3) {
+            transparent_shader(&ray, &hit, &seed);
+        } else {
+            break;
+        }
+
+        add_emission = true;
     }
 
     let prev = textureLoad(renderTexture, vec2u(ix, iy), 0).rgb;
