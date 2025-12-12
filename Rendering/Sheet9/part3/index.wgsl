@@ -173,6 +173,8 @@ var<private> branch_ray : array<vec2f, MAX_LEVEL>;
 const HOLDOUT_SHADER: i32 = 4;
 const HOLDOUT_PLANE_Y: f32 = -0.35;
 const HOLDOUT_EXTENT: f32 = 4.0;
+const SUN_DIRECTION: vec3f = normalize(vec3f(-0.3, 0.9, 0.25));
+const SUN_COLOR: vec3f = vec3f(5.0, 4.8, 4.2);
 
 fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
     var branch_lvl = 0u;
@@ -341,12 +343,6 @@ fn sample_cosine_hemisphere(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
     return normalize(x * u + y * v + z * w);
 }
 
-fn decode_hdr(texel: vec4f) -> vec3f {
-    let exponent = texel.a * 255.0 - 128.0;
-    let scale = exp2(exponent);
-    return texel.rgb * scale;
-}
-
 fn sample_environment(direction: vec3f) -> vec3f {
     const PI = 3.14159265359;
     let d = normalize(direction);
@@ -360,11 +356,7 @@ fn sample_environment(direction: vec3f) -> vec3f {
     let scaled = vec2f(u, v) * max(texSize - vec2f(1.0), vec2f(1.0));
     let clamped = clamp(scaled, vec2f(0.0), texSize - vec2f(1.0));
     let coord = vec2u(clamped);
-    let texel = textureLoad(my_texture, coord, 0);
-    let hdr = decode_hdr(texel);
-    let gamma = 2.2;
-    let tonemapped = pow(max(hdr, vec3f(0.0)), vec3f(1.0 / gamma));
-    return tonemapped;
+    return textureLoad(my_texture, coord, 0).rgb;
 }
 
 fn sample_cosine_environment(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
@@ -375,6 +367,22 @@ fn sample_cosine_environment(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
         sum += sample_environment(dir);
     }
     return sum / f32(SAMPLE_COUNT);
+}
+
+fn sun_visibility(position: vec3f, normal: vec3f) -> f32 {
+    let n = normalize(normal);
+    let ndl = max(dot(n, SUN_DIRECTION), 0.0);
+    if (ndl <= 0.0) { return 0.0; }
+    var shadowRay = Ray(position + n * 1.0e-3, SUN_DIRECTION, 1.0e-3, 1.0e4);
+    var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, false, vec3f(1.0));
+    if (intersect_objects(&shadowRay, &shadowHit)) {
+        return 0.0;
+    }
+    return ndl;
+}
+
+fn sun_radiance(position: vec3f, normal: vec3f) -> vec3f {
+    return SUN_COLOR * sun_visibility(position, normal);
 }
 
 fn holdout_shader(hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
@@ -391,7 +399,9 @@ fn holdout_shader(hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3
     }
     let aoColor = sum / f32(AO_SAMPLES);
     let planeTint = vec3f(0.7, 0.7, 0.7);
-    return planeTint * aoColor;
+    let ambient = planeTint * aoColor;
+    let sun = planeTint * sun_radiance((*hit).position + normal * 1.0e-3, normal);
+    return ambient + sun;
 }
 
 struct FragOut {
@@ -432,8 +442,10 @@ fn fs_main(input: VertexOutput) -> FragOut {
                 let reflected = reflect(ray.direction, normalize(hit.normal));
                 color = sample_environment(reflected);
             } else if (mode == 2) {
-                let envLight = sample_cosine_environment(normalize(hit.normal), &seed);
-                color = hit.diffuse * envLight;
+                let n = normalize(hit.normal);
+                let envLight = sample_cosine_environment(n, &seed);
+                let sunLight = sun_radiance(hit.position, n);
+                color = hit.diffuse * (envLight + sunLight);
             } else {
                 color = hit.diffuse;
             }

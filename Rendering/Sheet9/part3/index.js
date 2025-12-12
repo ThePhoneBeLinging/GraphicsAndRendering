@@ -138,7 +138,7 @@ async function main() {
     uniformData[21] = shadingMode;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
-    const texture = await load_texture(device, '../../../luxo_pxr_campus.hdr.png');
+    const texture = await load_texture(device, '../../../luxo_pxr_campus.jpg');
 
     const textures = {
         width: canvas.width,
