@@ -42,6 +42,7 @@ struct HitInfo {
     normal: vec3f,
     diffuse: vec3f,
     emission: vec3f,
+    extinction: vec3f,
     shader: i32,
     iof: f32,
     emit: bool,
@@ -154,9 +155,10 @@ fn intersect_triangle(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, face_i
     (*hit).normal   = interpN;
     (*hit).diffuse  = mat.diffuse.xyz;
     (*hit).emission = mat.emission.xyz;
-    (*hit).shader   = 0;
-    (*hit).iof      = 1.0;
-    (*hit).emit     = false;
+    (*hit).shader     = 0;
+    (*hit).iof        = 1.0;
+    (*hit).emit       = false;
+    (*hit).extinction = vec3f(0.0);
     (*hit).throughput = vec3f(1.0);
     return true;
 }
@@ -238,14 +240,15 @@ fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
     // Mirror sphere on the left
     let left_sphere_center = vec3f(420.0, 90.0, 370.0);
     let left_sphere_radius = 90.0;
-    if (intersect_sphere(r, hit, left_sphere_center, left_sphere_radius, 1, 1.0)) {
+    if (intersect_sphere(r, hit, left_sphere_center, left_sphere_radius, 1, 1.0, vec3f(0.0))) {
         (*r).tmax = (*hit).dist;
     }
 
     // Transparent sphere on the right
     let right_sphere_center = vec3f(130.0, 90.0, 250.0);
     let right_sphere_radius = 90.0;
-    if (intersect_sphere(r, hit, right_sphere_center, right_sphere_radius, 3, 1.5)) {
+    let glass_extinction = vec3f(0.25, 0.08, 0.02);
+    if (intersect_sphere(r, hit, right_sphere_center, right_sphere_radius, 3, 1.5, glass_extinction)) {
         (*r).tmax = (*hit).dist;
     }
 
@@ -350,7 +353,7 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: 
 
     let shadow_tmax = max(rlen - 1e-3, 1e-3);
     var shadowRay = Ray(p + surface_normal * 1e-4, wi, 1e-4, shadow_tmax);
-    var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
+    var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
     if (intersect_scene(&shadowRay, &shadowHit)) { return vec3f(0.0); }
 
     let G = cosL / (rlen * rlen);
@@ -359,7 +362,7 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: 
     return contrib;
 }
 
-fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: vec3f, radius: f32, shader_type: i32, iof_val: f32) -> bool {
+fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: vec3f, radius: f32, shader_type: i32, iof_val: f32, extinction: vec3f) -> bool {
     let oc = (*r).origin - center;
     let b = dot(oc, (*r).direction);
     let c = dot(oc, oc) - radius * radius;
@@ -388,6 +391,8 @@ fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: 
     (*hit).shader = shader_type;
     (*hit).iof = iof_val;
     (*hit).emit = false;
+    (*hit).extinction = extinction;
+    (*hit).throughput = vec3f(1.0);
 
     return true;
 }
@@ -431,12 +436,25 @@ fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     return vec3f(0.0);
 }
 
-fn transparent_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
+fn transparent_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> bool {
     let dir = normalize((*r).direction);
     let surf_normal = normalize((*hit).normal);
     let entering = dot(dir, surf_normal) <= 0.0;
     let n = select(-surf_normal, surf_normal, entering);
     let eta = select((*hit).iof, 1.0 / (*hit).iof, entering);
+
+    var attenuation = vec3f(1.0);
+    if (!entering) {
+        let sigma_t = (*hit).extinction;
+        let dist = (*hit).dist;
+        let transmittance = exp(-sigma_t * dist);
+        let avgTr = (transmittance.x + transmittance.y + transmittance.z) / 3.0;
+        if (avgTr <= 0.0 || rnd(seed) > avgTr) {
+            (*hit).emit = false;
+            return false;
+        }
+        attenuation = transmittance / max(avgTr, 1.0e-3);
+    }
 
     let cos_theta_i = abs(dot(dir, n));
     let sin_theta_i_sq = max(0.0, 1.0 - cos_theta_i * cos_theta_i);
@@ -462,7 +480,8 @@ fn transparent_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: 
     (*r).tmax = 1e9;
     (*hit).has_hit = false;
     (*hit).emit = true;
-    return vec3f(0.0);
+    (*hit).throughput = attenuation;
+    return true;
 }
 
 struct FragOut {
@@ -491,7 +510,7 @@ fn fs_main(input: VertexOutput) -> FragOut {
                         + p.y * v);
 
     var ray = Ray(uniforms.eye, dir, 1.0e-4, 1.0e5);
-    var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
+    var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
 
     var color = vec3f(0.0);
     var throughput = vec3f(1.0);
@@ -533,7 +552,10 @@ fn fs_main(input: VertexOutput) -> FragOut {
         } else if (hit.shader == 2) {
             refract_shader(&ray, &hit);
         } else if (hit.shader == 3) {
-            transparent_shader(&ray, &hit, &seed);
+            if (!transparent_shader(&ray, &hit, &seed)) {
+                break;
+            }
+            throughput *= hit.throughput;
         } else {
             break;
         }
