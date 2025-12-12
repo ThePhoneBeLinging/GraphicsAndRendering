@@ -235,19 +235,19 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
 }
 
 fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-     // Left sphere
-    /*let left_sphere_center = vec3f(420.0, 90.0, 370.0);
+    // Mirror sphere on the left
+    let left_sphere_center = vec3f(420.0, 90.0, 370.0);
     let left_sphere_radius = 90.0;
     if (intersect_sphere(r, hit, left_sphere_center, left_sphere_radius, 1, 1.0)) {
         (*r).tmax = (*hit).dist;
     }
-    
-    // Right sphere
+
+    // Transparent sphere on the right
     let right_sphere_center = vec3f(130.0, 90.0, 250.0);
     let right_sphere_radius = 90.0;
-    if (intersect_sphere(r, hit, right_sphere_center, right_sphere_radius, 2, 1.5)) {
+    if (intersect_sphere(r, hit, right_sphere_center, right_sphere_radius, 3, 1.5)) {
         (*r).tmax = (*hit).dist;
-    }*/
+    }
 
     if (intersect_aabb_clip(r)) {
         if (intersect_trimesh(r, hit)) {
@@ -359,12 +359,62 @@ fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: 
     return contrib;
 }
 
+fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: vec3f, radius: f32, shader_type: i32, iof_val: f32) -> bool {
+    let oc = (*r).origin - center;
+    let b = dot(oc, (*r).direction);
+    let c = dot(oc, oc) - radius * radius;
+    let discriminant = b * b - c;
+
+    if (discriminant < 0.0) { return false; }
+
+    let sqrt_disc = sqrt(discriminant);
+    let t1 = -b - sqrt_disc;
+    let t2 = -b + sqrt_disc;
+
+    var t = t1;
+    if (t < (*r).tmin || t > (*r).tmax) {
+        t = t2;
+        if (t < (*r).tmin || t > (*r).tmax) {
+            return false;
+        }
+    }
+
+    (*hit).dist = t;
+    (*hit).position = (*r).origin + (*r).direction * t;
+    (*hit).normal = normalize((*hit).position - center);
+    (*hit).has_hit = true;
+    (*hit).diffuse = vec3f(0.0);
+    (*hit).emission = vec3f(0.0);
+    (*hit).shader = shader_type;
+    (*hit).iof = iof_val;
+
+    return true;
+}
+
+fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
+    let direct = sample_area_lights(r, hit, seed);
+    return (*hit).emission + direct;
+}
+
+fn fresnel_R(cos_theta_i: f32, cos_theta_t: f32, eta: f32) -> f32 {
+    let sin_theta_i_sq = max(0.0, 1.0 - cos_theta_i * cos_theta_i);
+    let sin_theta_t_sq = eta * eta * sin_theta_i_sq;
+    if (sin_theta_t_sq > 1.0) {
+        return 1.0;
+    }
+
+    let r_perp = (eta * cos_theta_i - cos_theta_t) / (eta * cos_theta_i + cos_theta_t);
+    let r_parallel = (cos_theta_i - eta * cos_theta_t) / (cos_theta_i + eta * cos_theta_t);
+    return 0.5 * (r_perp * r_perp + r_parallel * r_parallel);
+}
+
 fn mirror_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     let reflected = reflect(normalize((*r).direction), normalize((*hit).normal));
     (*hit).has_hit = false;
-    (*r).direction = normalize(reflected);
-    (*r).origin = (*hit).position;
-    (*r).tmin = 1.0;
+    let dir = normalize(reflected);
+    (*r).direction = dir;
+    (*r).origin = (*hit).position + dir * 1.0e-4;
+    (*r).tmin = 1.0e-4;
     (*r).tmax = 1e9;
     return vec3f(0.0);
 }
@@ -378,6 +428,39 @@ fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     (*r).direction = refracted;
     (*r).origin = (*hit).position + refracted * 1e-4;
     (*r).tmin = 0.1;
+    (*r).tmax = 1e9;
+    (*hit).has_hit = false;
+    return vec3f(0.0);
+}
+
+fn transparent_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
+    let dir = normalize((*r).direction);
+    let surf_normal = normalize((*hit).normal);
+    let entering = dot(dir, surf_normal) <= 0.0;
+    let n = select(-surf_normal, surf_normal, entering);
+    let eta = select((*hit).iof, 1.0 / (*hit).iof, entering);
+
+    let cos_theta_i = abs(dot(dir, n));
+    let sin_theta_i_sq = max(0.0, 1.0 - cos_theta_i * cos_theta_i);
+    let sin_theta_t_sq = eta * eta * sin_theta_i_sq;
+    let cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_t_sq));
+    let R = fresnel_R(cos_theta_i, cos_theta_t, eta);
+    let tir = sin_theta_t_sq > 1.0;
+    let choose_reflection = tir || rnd(seed) < R;
+
+    if (choose_reflection) {
+        let reflected = reflect(dir, n);
+        let new_dir = normalize(reflected);
+        (*r).direction = new_dir;
+        (*r).origin = (*hit).position + n * 1.0e-4;
+    } else {
+        let refracted = refract(dir, n, eta);
+        let new_dir = normalize(refracted);
+        (*r).direction = new_dir;
+        (*r).origin = (*hit).position + new_dir * 1.0e-4;
+    }
+
+    (*r).tmin = 1.0e-4;
     (*r).tmax = 1e9;
     (*hit).has_hit = false;
     return vec3f(0.0);
@@ -411,40 +494,25 @@ fn fs_main(input: VertexOutput) -> FragOut {
     var ray = Ray(uniforms.eye, dir, 1.0e-4, 1.0e5);
     var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
 
-    var color = vec3f(0.0);
-    var throughput = vec3f(1.0);
-    var add_emission = true;
-
-    const max_depth = 4;
+    var color = vec3f(0.1, 0.3, 0.6);
+    const max_depth = 10;
     for (var depth = 0; depth < max_depth; depth = depth + 1) {
         if (intersect_scene(&ray, &hit)) {
-            if (add_emission) {
-                color += throughput * hit.emission;
-            }
-
-            let direct = sample_area_lights(&ray, &hit, &seed);
-            color += throughput * direct;
-
-            let n = normalize(hit.normal);
-            let new_dir = sample_cosine_hemisphere(n, &seed);
-
-            throughput *= hit.diffuse;
-
-            let p_survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 0.99);
-            if (rnd(&seed) > p_survive) {
+            if (hit.shader == 0) {
+                color = shade(&ray, &hit, &seed);
+                break;
+            } else if (hit.shader == 1) {
+                mirror_shader(&ray, &hit);
+            } else if (hit.shader == 2) {
+                refract_shader(&ray, &hit);
+            } else if (hit.shader == 3) {
+                transparent_shader(&ray, &hit, &seed);
+            } else {
+                color = hit.emission;
                 break;
             }
-            throughput /= p_survive;
-
-            ray.origin = hit.position + n * 1e-4;
-            ray.direction = new_dir;
-            ray.tmin = 1e-4;
-            ray.tmax = 1e5;
-
-            add_emission = false;
         } else {
-            let bg = select(vec3f(0.0), vec3f(0.1, 0.3, 0.6), uniforms.useBlueBackground > 0.5);
-            color += throughput * bg;
+            color = vec3f(0.1, 0.3, 0.6);
             break;
         }
     }

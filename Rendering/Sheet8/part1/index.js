@@ -60,7 +60,7 @@ async function main() {
             cameraConstant: 3.5,
         },
         cornellbox: {
-            file: '../objects/CornellBoxWithBlocks.obj',
+            file: '../objects/CornellBox.obj',
             eye: [277.0, 275.0, -570.0],
             at: [277.0, 275.0, 0.0],
             up: [0.0, 1.0, 0.0],
