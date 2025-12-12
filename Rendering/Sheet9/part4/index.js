@@ -83,17 +83,19 @@ async function main() {
 
     let buffers = {};
     let currentModel = 'teapot';
+    const initialPreset = MODEL_PRESETS[currentModel];
     let aspectRatio = canvas.width / canvas.height;
-    let cameraConstant = parseFloat(cameraConstantValue.value);
+    let cameraConstant = initialPreset.cameraConstant;
     let gamma = parseFloat(gammaSlider.value);
-    cameraConstant = 1.0;
     if (gammaValue) {
         gammaValue.textContent = gamma.toFixed(2);
     }
+    if (cameraConstantSlider) cameraConstantSlider.value = String(cameraConstant);
+    if (cameraConstantValue) cameraConstantValue.textContent = cameraConstant.toFixed(2);
 
-    const eye = [277.0, 275.0, -570.0];
-    const at = [277.0, 275.0, 0.0];
-    const up = [0.0, 1.0, 0.0];
+    const eye = [...initialPreset.eye];
+    const at = [...initialPreset.at];
+    const up = [...initialPreset.up];
 
     const uniformData = new Float32Array(24);
     uniformData[0] = aspectRatio;
@@ -138,7 +140,7 @@ async function main() {
     uniformData[21] = shadingMode;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
-    const texture = await load_texture(device, '../../../luxo_pxr_campus.jpg');
+    const { texture: environmentTexture } = await load_hdr_texture(device, '../../../radkow_lake_4k.hdr');
 
     const textures = {
         width: canvas.width,
@@ -200,10 +202,6 @@ async function main() {
         },
         primitive: { topology: 'triangle-strip' }
     });
-
-    const renderPassDescriptor = {
-        colorAttachments: [{ clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' }],
-    };
 
     let bindGroup;
 
@@ -401,21 +399,33 @@ async function main() {
         if (!progressiveEnabled) render();
     }
 
-    async function load_texture(device, filename) {
-        const response = await fetch(filename);
-        const blob = await response.blob();
-        const img = await createImageBitmap(blob, { colorSpaceConversion: 'none' });
-        const texture = device.createTexture({
-            size: [img.width, img.height, 1],
-            format: "rgba8unorm",
-            usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT
+    async function load_hdr_texture(device, filename) {
+        return new Promise((resolve, reject) => {
+            const hdr = new HDRImage();
+            hdr.onload = () => {
+                try {
+                    const width = hdr.width;
+                    const height = hdr.height;
+                    const data = new Uint8Array(hdr.dataRGBE);
+                    const texture = device.createTexture({
+                        size: [width, height, 1],
+                        format: 'rgba8unorm',
+                        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+                    });
+                    device.queue.writeTexture(
+                        { texture },
+                        data,
+                        { bytesPerRow: width * 4 },
+                        { width, height, depthOrArrayLayers: 1 }
+                    );
+                    resolve({ texture, width, height });
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            hdr.onerror = () => reject(new Error(`Failed to load HDR: ${filename}`));
+            hdr.src = filename;
         });
-        device.queue.copyExternalImageToTexture(
-            { source: img, flipY: false },
-            { texture: texture },
-            { width: img.width, height: img.height },
-        );
-        return texture;
     }
 
     async function loadModelAndRebind(key) {
@@ -478,7 +488,7 @@ async function main() {
             layout: bindGroupLayout,
             entries: [
                 { binding: 0, resource: { buffer: uniformBuffer } },
-                { binding: 1, resource: texture.createView() },
+                { binding: 1, resource: environmentTexture.createView() },
                 { binding: 2, resource: { buffer: jitterBuffer } },
                 { binding: 3, resource: { buffer: buffers.attribs } },  
                 { binding: 4, resource: { buffer: buffers.indices } },   
