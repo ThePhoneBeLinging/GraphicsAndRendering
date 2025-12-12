@@ -85,9 +85,11 @@ async function main() {
     let currentModel = 'teapot';
     let aspectRatio = canvas.width / canvas.height;
     let cameraConstant = parseFloat(cameraConstantValue.value);
-    let gamma = parseFloat(gammaValue.value);
-    gamma = 2.4;
+    let gamma = parseFloat(gammaSlider.value);
     cameraConstant = 1.0;
+    if (gammaValue) {
+        gammaValue.textContent = gamma.toFixed(2);
+    }
 
     const eye = [277.0, 275.0, -570.0];
     const at = [277.0, 275.0, 0.0];
@@ -136,7 +138,7 @@ async function main() {
     uniformData[21] = shadingMode;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
-    const texture = await load_texture(device, '../../../luxo_pxr_campus.jpg');
+    const texture = await load_texture(device, '../../../luxo_pxr_campus.hdr.png');
 
     const textures = {
         width: canvas.width,

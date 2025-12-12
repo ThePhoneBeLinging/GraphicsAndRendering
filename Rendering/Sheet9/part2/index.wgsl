@@ -170,6 +170,10 @@ const BSP_LEAF: u32 = 3u;
 var<private> branch_node: array<vec2u, MAX_LEVEL>;
 var<private> branch_ray : array<vec2f, MAX_LEVEL>;
 
+const HOLDOUT_SHADER: i32 = 4;
+const HOLDOUT_PLANE_Y: f32 = -0.35;
+const HOLDOUT_EXTENT: f32 = 4.0;
+
 fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
     var branch_lvl = 0u;
     var node = 0u;
@@ -237,13 +241,63 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
     return false;
 }
 
-fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
+fn intersect_objects(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
+    var found = false;
     if (intersect_aabb_clip(r)) {
         if (intersect_trimesh(r, hit)) {
             (*r).tmax = (*hit).dist;
+            found = true;
         }
     }
-    return (*hit).has_hit;
+    return found;
+}
+
+fn intersect_holdout_plane(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
+    let normal = vec3f(0.0, 1.0, 0.0);
+    let denom = dot(normal, (*r).direction);
+    if (abs(denom) < 1.0e-5) { return false; }
+    let t = (HOLDOUT_PLANE_Y - (*r).origin.y) / denom;
+    if (t < (*r).tmin || t > (*r).tmax) { return false; }
+    let position = (*r).origin + (*r).direction * t;
+    if (abs(position.x) > HOLDOUT_EXTENT || abs(position.z) > HOLDOUT_EXTENT) { return false; }
+
+    (*hit).has_hit = true;
+    (*hit).dist = t;
+    (*hit).position = position;
+    (*hit).normal = normal;
+    (*hit).diffuse = vec3f(0.5);
+    (*hit).emission = vec3f(0.0);
+    (*hit).shader = HOLDOUT_SHADER;
+    (*hit).iof = 1.0;
+    (*hit).emit = false;
+    (*hit).extinction = vec3f(0.0);
+    (*hit).throughput = vec3f(1.0);
+    return true;
+}
+
+fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
+    var found = false;
+    var best_tmax = (*r).tmax;
+
+    var planeRay = Ray((*r).origin, (*r).direction, (*r).tmin, best_tmax);
+    var planeHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, false, vec3f(1.0));
+    if (intersect_holdout_plane(&planeRay, &planeHit)) {
+        best_tmax = planeHit.dist;
+        (*hit) = planeHit;
+        (*r).tmax = best_tmax;
+        found = true;
+    }
+
+    var meshRay = Ray((*r).origin, (*r).direction, (*r).tmin, best_tmax);
+    var meshHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, false, vec3f(1.0));
+    if (intersect_objects(&meshRay, &meshHit)) {
+        best_tmax = meshHit.dist;
+        (*hit) = meshHit;
+        (*r).tmax = best_tmax;
+        found = true;
+    }
+
+    return found;
 }
 
 fn tea(val0: u32, val1: u32) -> u32 {
@@ -287,6 +341,12 @@ fn sample_cosine_hemisphere(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
     return normalize(x * u + y * v + z * w);
 }
 
+fn decode_hdr(texel: vec4f) -> vec3f {
+    let exponent = texel.a * 255.0 - 128.0;
+    let scale = exp2(exponent);
+    return texel.rgb * scale;
+}
+
 fn sample_environment(direction: vec3f) -> vec3f {
     const PI = 3.14159265359;
     let d = normalize(direction);
@@ -300,7 +360,11 @@ fn sample_environment(direction: vec3f) -> vec3f {
     let scaled = vec2f(u, v) * max(texSize - vec2f(1.0), vec2f(1.0));
     let clamped = clamp(scaled, vec2f(0.0), texSize - vec2f(1.0));
     let coord = vec2u(clamped);
-    return textureLoad(my_texture, coord, 0).rgb;
+    let texel = textureLoad(my_texture, coord, 0);
+    let hdr = decode_hdr(texel);
+    let gamma = 2.2;
+    let tonemapped = pow(max(hdr, vec3f(0.0)), vec3f(1.0 / gamma));
+    return tonemapped;
 }
 
 fn sample_cosine_environment(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
@@ -311,6 +375,23 @@ fn sample_cosine_environment(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
         sum += sample_environment(dir);
     }
     return sum / f32(SAMPLE_COUNT);
+}
+
+fn holdout_shader(hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
+    const AO_SAMPLES: u32 = 16u;
+    let normal = normalize((*hit).normal);
+    var sum = vec3f(0.0);
+    for (var i = 0u; i < AO_SAMPLES; i = i + 1u) {
+        let dir = sample_cosine_hemisphere(normal, seed);
+        var aoRay = Ray((*hit).position + normal * 1.0e-3, dir, 1.0e-3, 1.0e4);
+        var aoHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, false, vec3f(1.0));
+        if (!intersect_objects(&aoRay, &aoHit)) {
+            sum += sample_environment(dir);
+        }
+    }
+    let aoColor = sum / f32(AO_SAMPLES);
+    let planeTint = vec3f(0.7, 0.7, 0.7);
+    return planeTint * aoColor;
 }
 
 struct FragOut {
@@ -343,15 +424,19 @@ fn fs_main(input: VertexOutput) -> FragOut {
 
     var color = vec3f(0.0);
     if (intersect_scene(&ray, &hit)) {
-        let mode = i32(uniforms.shadingMode + 0.5);
-        if (mode == 1) {
-            let reflected = reflect(ray.direction, normalize(hit.normal));
-            color = sample_environment(reflected);
-        } else if (mode == 2) {
-            let envLight = sample_cosine_environment(normalize(hit.normal), &seed);
-            color = hit.diffuse * envLight;
+        if (hit.shader == HOLDOUT_SHADER) {
+            color = holdout_shader(&hit, &seed);
         } else {
-            color = hit.diffuse;
+            let mode = i32(uniforms.shadingMode + 0.5);
+            if (mode == 1) {
+                let reflected = reflect(ray.direction, normalize(hit.normal));
+                color = sample_environment(reflected);
+            } else if (mode == 2) {
+                let envLight = sample_cosine_environment(normalize(hit.normal), &seed);
+                color = hit.diffuse * envLight;
+            } else {
+                color = hit.diffuse;
+            }
         }
     } else {
         if (uniforms.useBlueBackground > 0.5) {
