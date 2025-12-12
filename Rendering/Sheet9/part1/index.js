@@ -59,13 +59,6 @@ async function main() {
             up: [0.0, 1.0, 0.0],
             cameraConstant: 3.5,
         },
-        cornellbox: {
-            file: '../objects/CornellBox.obj',
-            eye: [277.0, 275.0, -570.0],
-            at: [277.0, 275.0, 0.0],
-            up: [0.0, 1.0, 0.0],
-            cameraConstant: 1.0,
-        },
     };
 
     let subdivLevel = 2;
@@ -86,6 +79,7 @@ async function main() {
     const filterMode = document.getElementById('sunday');
     const useTexture = document.getElementById('use-texture');
     const modelSelect = document.getElementById('model');
+    const shadingModeSelect = document.getElementById('shading-mode');
 
     let buffers = {};
     let currentModel = 'teapot';
@@ -120,14 +114,15 @@ async function main() {
     uniformData[17] = 0;
     uniformData[18] = canvas.width;
     uniformData[19] = canvas.height;
-    uniformData[20] = 1.0;
+    uniformData[20] = 0.0;
     uniformData[21] = 0;
     uniformData[22] = 0;
     uniformData[23] = 0; 
 
     let frameNumber = 0;
     let progressiveEnabled = true;
-    let useBlueBackground = true;
+    let useBlueBackground = false;
+    let shadingMode = 0;
 
     const uniformBuffer = device.createBuffer({
         size: 128,
@@ -137,7 +132,11 @@ async function main() {
     new Float32Array(uniformBuffer.getMappedRange()).set(uniformData);
     uniformBuffer.unmap();
 
-    const texture = await load_texture(device, 'grass.jpg');
+    uniformData[20] = useBlueBackground ? 1.0 : 0.0;
+    uniformData[21] = shadingMode;
+    device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+
+    const texture = await load_texture(device, '../../../luxo_pxr_campus.jpg');
 
     const textures = {
         width: canvas.width,
@@ -314,6 +313,20 @@ async function main() {
         });
     }
 
+    if (shadingModeSelect) {
+        shadingModeSelect.value = 'base';
+        shadingModeSelect.addEventListener('change', () => {
+            const value = shadingModeSelect.value;
+            shadingMode = value === 'mirror' ? 1 : value === 'diffuse' ? 2 : 0;
+            uniformData[21] = shadingMode;
+            device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+            resetFrameCounter();
+            if (!progressiveEnabled) {
+                render();
+            }
+        });
+    }
+
     addEventListener("wheel", (event) => {
         cameraConstant *= 1.0 + 2.5e-4 * event.deltaY;
         uniformData[1] = cameraConstant;
@@ -396,7 +409,7 @@ async function main() {
             usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT
         });
         device.queue.copyExternalImageToTexture(
-            { source: img, flipY: true },
+            { source: img, flipY: false },
             { texture: texture },
             { width: img.width, height: img.height },
         );
@@ -482,9 +495,9 @@ async function main() {
     }
 
     updateJitterBuffer();
-    await loadModelAndRebind('cornellbox');
+    await loadModelAndRebind('teapot');
     if (modelSelect) {
-        modelSelect.value = 'cornellbox';
+        modelSelect.value = 'teapot';
         modelSelect.addEventListener('change', async (e) => {
             await loadModelAndRebind(e.target.value);
         });

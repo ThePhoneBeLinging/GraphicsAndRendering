@@ -20,7 +20,8 @@ struct Uniforms {
     canvas_height: f32,
 
     useBlueBackground: f32,
-    _pad: vec3f,
+    shadingMode: f32,
+    _pad: vec2f,
 };
 
 struct Aabb {
@@ -237,21 +238,6 @@ fn intersect_trimesh(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool
 }
 
 fn intersect_scene(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-    // Mirror sphere on the left
-    let left_sphere_center = vec3f(420.0, 90.0, 370.0);
-    let left_sphere_radius = 90.0;
-    if (intersect_sphere(r, hit, left_sphere_center, left_sphere_radius, 1, 1.0, vec3f(0.0))) {
-        (*r).tmax = (*hit).dist;
-    }
-
-    // Transparent sphere on the right
-    let right_sphere_center = vec3f(130.0, 90.0, 250.0);
-    let right_sphere_radius = 90.0;
-    let glass_extinction = vec3f(0.25, 0.08, 0.02);
-    if (intersect_sphere(r, hit, right_sphere_center, right_sphere_radius, 3, 1.5, glass_extinction)) {
-        (*r).tmax = (*hit).dist;
-    }
-
     if (intersect_aabb_clip(r)) {
         if (intersect_trimesh(r, hit)) {
             (*r).tmax = (*hit).dist;
@@ -301,187 +287,30 @@ fn sample_cosine_hemisphere(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
     return normalize(x * u + y * v + z * w);
 }
 
-fn sample_area_lights(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {
+fn sample_environment(direction: vec3f) -> vec3f {
     const PI = 3.14159265359;
-
-    let nLights = arrayLength(&lightIndices);
-    if (nLights == 0u) {
-        return vec3f(0.0);
-    }
-
-    let surface_diffuse = (*hit).diffuse;
-    let surface_normal = normalize((*hit).normal);
-    let p = (*hit).position;
-    let brdf = surface_diffuse / PI;
-
-    let li = u32(rnd(seed) * f32(nLights));
-    let idx = min(li, nLights - 1u);
-    let fidx = lightIndices[idx];
-    let face = meshFaces[fidx];
-
-    let v0 = attribs[face.x].position.xyz;
-    let v1 = attribs[face.y].position.xyz;
-    let v2 = attribs[face.z].position.xyz;
-
-    let xi1 = rnd(seed);
-    let xi2 = rnd(seed);
-    let a = 1.0 - sqrt(xi1);
-    let b = (1.0 - xi2) * sqrt(xi1);
-    let c = xi2 * sqrt(xi1);
-    let xc = a * v0 + b * v1 + c * v2;
-
-    let e1 = v1 - v0;
-    let e2 = v2 - v0;
-    let nL = normalize(cross(e1, e2));
-    let A = 0.5 * length(cross(e1, e2));
-    if (A <= 0.0) { return vec3f(0.0); }
-
-    let vecL = xc - p;
-    let rlen = length(vecL);
-    if (rlen <= 1e-6) { return vec3f(0.0); }
-    let wi = vecL / rlen;
-
-    let matId = face.w;
-    let Le = materials[matId].emission.xyz;
-    if (length(Le) < 1e-6) { return vec3f(0.0); }
-
-    let cosS = max(dot(surface_normal, wi), 0.0);
-    if (cosS <= 0.0) { return vec3f(0.0); }
-
-    let cosL = max(dot(-wi, nL), 0.0);
-    if (cosL <= 0.0) { return vec3f(0.0); }
-
-    let shadow_tmax = max(rlen - 1e-3, 1e-3);
-    var shadowRay = Ray(p + surface_normal * 1e-4, wi, 1e-4, shadow_tmax);
-    var shadowHit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
-    if (intersect_scene(&shadowRay, &shadowHit)) { return vec3f(0.0); }
-
-    let G = cosL / (rlen * rlen);
-    let contrib = brdf * Le * G * cosS * f32(nLights) * A;
-
-    return contrib;
+    let d = normalize(direction);
+    let phi = atan2(d.z, d.x);
+    let theta = acos(clamp(d.y, -1.0, 1.0));
+    var u = phi / (2.0 * PI) + 0.5;
+    var v = theta / PI;
+    u = fract(u);
+    v = clamp(v, 0.0, 1.0);
+    let texSize = vec2f(textureDimensions(my_texture, 0));
+    let scaled = vec2f(u, v) * max(texSize - vec2f(1.0), vec2f(1.0));
+    let clamped = clamp(scaled, vec2f(0.0), texSize - vec2f(1.0));
+    let coord = vec2u(clamped);
+    return textureLoad(my_texture, coord, 0).rgb;
 }
 
-fn intersect_sphere(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, center: vec3f, radius: f32, shader_type: i32, iof_val: f32, extinction: vec3f) -> bool {
-    let oc = (*r).origin - center;
-    let b = dot(oc, (*r).direction);
-    let c = dot(oc, oc) - radius * radius;
-    let discriminant = b * b - c;
-
-    if (discriminant < 0.0) { return false; }
-
-    let sqrt_disc = sqrt(discriminant);
-    let t1 = -b - sqrt_disc;
-    let t2 = -b + sqrt_disc;
-
-    var t = t1;
-    if (t < (*r).tmin || t > (*r).tmax) {
-        t = t2;
-        if (t < (*r).tmin || t > (*r).tmax) {
-            return false;
-        }
+fn sample_cosine_environment(normal: vec3f, seed: ptr<function, u32>) -> vec3f {
+    const SAMPLE_COUNT: u32 = 4u;
+    var sum = vec3f(0.0);
+    for (var i = 0u; i < SAMPLE_COUNT; i = i + 1u) {
+        let dir = sample_cosine_hemisphere(normal, seed);
+        sum += sample_environment(dir);
     }
-
-    (*hit).dist = t;
-    (*hit).position = (*r).origin + (*r).direction * t;
-    (*hit).normal = normalize((*hit).position - center);
-    (*hit).has_hit = true;
-    (*hit).diffuse = vec3f(0.0);
-    (*hit).emission = vec3f(0.0);
-    (*hit).shader = shader_type;
-    (*hit).iof = iof_val;
-    (*hit).emit = false;
-    (*hit).extinction = extinction;
-    (*hit).throughput = vec3f(1.0);
-
-    return true;
-}
-
-fn fresnel_R(cos_theta_i: f32, cos_theta_t: f32, eta: f32) -> f32 {
-    let sin_theta_i_sq = max(0.0, 1.0 - cos_theta_i * cos_theta_i);
-    let sin_theta_t_sq = eta * eta * sin_theta_i_sq;
-    if (sin_theta_t_sq > 1.0) {
-        return 1.0;
-    }
-
-    let r_perp = (eta * cos_theta_i - cos_theta_t) / (eta * cos_theta_i + cos_theta_t);
-    let r_parallel = (cos_theta_i - eta * cos_theta_t) / (cos_theta_i + eta * cos_theta_t);
-    return 0.5 * (r_perp * r_perp + r_parallel * r_parallel);
-}
-
-fn mirror_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-    let reflected = reflect(normalize((*r).direction), normalize((*hit).normal));
-    (*hit).has_hit = false;
-    let dir = normalize(reflected);
-    (*r).direction = dir;
-    (*r).origin = (*hit).position + dir * 1.0e-4;
-    (*r).tmin = 1.0e-4;
-    (*r).tmax = 1e9;
-    (*hit).emit = true;
-    return vec3f(0.0);
-}
-
-fn refract_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-    let entering = dot((*r).direction, (*hit).normal) <= 0.0;
-    let n = select(-(*hit).normal, (*hit).normal, entering);
-    let eta = select((*hit).iof / 1.0, 1.0 / (*hit).iof, entering);
-    let refracted = normalize(refract((*r).direction, n, eta));
-
-    (*r).direction = refracted;
-    (*r).origin = (*hit).position + refracted * 1e-4;
-    (*r).tmin = 0.1;
-    (*r).tmax = 1e9;
-    (*hit).has_hit = false;
-    (*hit).emit = true;
-    return vec3f(0.0);
-}
-
-fn transparent_shader(r: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> bool {
-    let dir = normalize((*r).direction);
-    let surf_normal = normalize((*hit).normal);
-    let entering = dot(dir, surf_normal) <= 0.0;
-    let n = select(-surf_normal, surf_normal, entering);
-    let eta = select((*hit).iof, 1.0 / (*hit).iof, entering);
-
-    var attenuation = vec3f(1.0);
-    if (!entering) {
-        let sigma_t = (*hit).extinction;
-        let dist = (*hit).dist;
-        let transmittance = exp(-sigma_t * dist);
-        let avgTr = (transmittance.x + transmittance.y + transmittance.z) / 3.0;
-        if (avgTr <= 0.0 || rnd(seed) > avgTr) {
-            (*hit).emit = false;
-            return false;
-        }
-        attenuation = transmittance / max(avgTr, 1.0e-3);
-    }
-
-    let cos_theta_i = abs(dot(dir, n));
-    let sin_theta_i_sq = max(0.0, 1.0 - cos_theta_i * cos_theta_i);
-    let sin_theta_t_sq = eta * eta * sin_theta_i_sq;
-    let cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_t_sq));
-    let R = fresnel_R(cos_theta_i, cos_theta_t, eta);
-    let tir = sin_theta_t_sq > 1.0;
-    let choose_reflection = tir || rnd(seed) < R;
-
-    if (choose_reflection) {
-        let reflected = reflect(dir, n);
-        let new_dir = normalize(reflected);
-        (*r).direction = new_dir;
-        (*r).origin = (*hit).position + n * 1.0e-4;
-    } else {
-        let refracted = refract(dir, n, eta);
-        let new_dir = normalize(refracted);
-        (*r).direction = new_dir;
-        (*r).origin = (*hit).position + new_dir * 1.0e-4;
-    }
-
-    (*r).tmin = 1.0e-4;
-    (*r).tmax = 1e9;
-    (*hit).has_hit = false;
-    (*hit).emit = true;
-    (*hit).throughput = attenuation;
-    return true;
+    return sum / f32(SAMPLE_COUNT);
 }
 
 struct FragOut {
@@ -513,54 +342,23 @@ fn fs_main(input: VertexOutput) -> FragOut {
     var hit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 0, 1.0, true, vec3f(1.0));
 
     var color = vec3f(0.0);
-    var throughput = vec3f(1.0);
-    var add_emission = true;
-
-    const max_depth = 10;
-    for (var depth = 0; depth < max_depth; depth = depth + 1) {
-        if (!intersect_scene(&ray, &hit)) {
-            break;
-        }
-
-        if (add_emission) {
-            color += throughput * hit.emission;
-        }
-
-        if (hit.shader == 0) {
-            let direct = sample_area_lights(&ray, &hit, &seed);
-            color += throughput * direct;
-
-            let n = normalize(hit.normal);
-            let new_dir = sample_cosine_hemisphere(n, &seed);
-
-            throughput *= hit.diffuse;
-
-            let p_survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 0.99);
-            if (rnd(&seed) > p_survive) {
-                break;
-            }
-            throughput /= p_survive;
-
-            ray.origin = hit.position + n * 1e-4;
-            ray.direction = new_dir;
-            ray.tmin = 1e-4;
-            ray.tmax = 1e5;
-
-            hit.emit = false;
-        } else if (hit.shader == 1) {
-            mirror_shader(&ray, &hit);
-        } else if (hit.shader == 2) {
-            refract_shader(&ray, &hit);
-        } else if (hit.shader == 3) {
-            if (!transparent_shader(&ray, &hit, &seed)) {
-                break;
-            }
-            throughput *= hit.throughput;
+    if (intersect_scene(&ray, &hit)) {
+        let mode = i32(uniforms.shadingMode + 0.5);
+        if (mode == 1) {
+            let reflected = reflect(ray.direction, normalize(hit.normal));
+            color = sample_environment(reflected);
+        } else if (mode == 2) {
+            let envLight = sample_cosine_environment(normalize(hit.normal), &seed);
+            color = hit.diffuse * envLight;
         } else {
-            break;
+            color = hit.diffuse;
         }
-
-        add_emission = hit.emit;
+    } else {
+        if (uniforms.useBlueBackground > 0.5) {
+            color = vec3f(0.1, 0.3, 0.6);
+        } else {
+            color = sample_environment(ray.direction);
+        }
     }
 
     let prev = textureLoad(renderTexture, vec2u(ix, iy), 0).rgb;
