@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sheet10 - Production Rendering</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem;
+            line-height: 1.5;
+            background-color: #f4f4f4;
+            color: #111;
+        }
+
+        h1, h2, h3 {
+            color: #0c3b5f;
+        }
+
+        .intro {
+            max-width: 840px;
+        }
+
+        .deliverable {
+            background: #fff;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        figure {
+            margin: 0;
+        }
+
+        img {
+            max-width: 100%;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        figcaption {
+            font-size: 0.9rem;
+            color: #555;
+            margin-top: 0.5rem;
+        }
+
+        ul {
+            margin-top: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sheet10 - Production Rendering</h1>
+
+    <section class="deliverable">
+        <h2>Part 1 – Mirror Sphere and Cube - Elias</h2>
+        <figure>
+            <img src="Part1.png" alt="Mirror sphere and cube render">
+        </figure>
+    </section>
+
+    <section class="deliverable">
+        <h2>Part 2 – Metallic Sphere and Glass Cube - Emil</h2>
+        <figure>
+            <img src="Part2.png" alt="Metallic sphere and glass cube render">
+        </figure>
+    </section>
+
+    <section class="deliverable">
+        <h2>Part 3 – Imported Marble Bust - Elias</h2>
+        <figure>
+            <img src="Part3.png" alt="Marble bust hero render">
+        </figure>
+        <h3>Material settings</h3>
+        <ul>
+            <li>Principled BSDF driven by <code>marble_bust_01_diff_4k.jpg</code> plugged into the Base Color while the rest of the shader remains at its defaults, resulting in the slight purple tint present in the original texture.</li>
+            <li>The material stays dielectric (<code>Metallic = 0</code>, default <code>Roughness = 0.5</code>) which keeps the bust matte compared to the mirrors from Part&nbsp;1.</li>
+            <li>The ground plane continues to act as a shadow catcher and the HDR environment provides both light and reflections, so no extra fill lights were required.</li>
+        </ul>
+        <h3>Rendering parameters</h3>
+        <ul>
+            <li>Camera at 44&nbsp;mm focal length with depth of field focused on the bust and <code>f/2</code> to produce a gallery-style shallow depth of field.</li>
+            <li>Cycles GPU, 512 render samples with Adaptive Sampling, Max Bounces 12 (Transmission 8, Volume 2) and the same denoiser used in the earlier parts.</li>
+        </ul>
+        <p>
+            The only imported asset is the bust itself, so simplifying the shader to the supplied albedo texture kept the
+            node setup minimal while focusing on camera placement and depth of field for the overall mood.
+        </p>
+    </section>
+
+    <section class="deliverable">
+        <h2>Cycles vs. Custom WebGPU Renderer - Emil</h2>
+        <p>
+            Cycles feels like a fully furnished studio. You get a great node editor, denoisers, adaptive sampling, and lots of finished
+            shading models such as SSS, volumes, and caustics. The flip side is that it is a closed box, so digging into the integrator,
+            swapping BRDF code, or trying oddball sampling ideas is tricky compared to owning the whole stack.
+        </p>
+        <p>
+            A WebGPU renderer takes more effort to build, yet it gives total freedom. You can log every ray event, hook into course assignments,
+            and experiment with custom materials or debugging views whenever you want. Rebuilding Cycles staples like the node graph, path guiding,
+            denoisers, and the material library inside WebGPU would be a serious time investment, so Cycles wins whenever you need production polish fast.
+        </p>
+    </section>
+</body>
+</html>
