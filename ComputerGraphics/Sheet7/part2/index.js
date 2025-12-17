@@ -84,6 +84,27 @@ async function main() {
     });
     device.queue.writeBuffer(indexBuffer, 0, indexData);
 
+    const bgVertices = new Float32Array([
+        -1, -1, 0.9999,
+        1, -1, 0.9999,
+        -1, 1, 0.9999,
+        1, 1, 0.9999,
+    ]);
+
+    const bgIndices = new Uint32Array([0, 1, 2, 2, 1, 3]);
+
+    const bgVertexBuffer = device.createBuffer({
+        size: bgVertices.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(bgVertexBuffer, 0, bgVertices);
+
+    const bgIndexBuffer = device.createBuffer({
+        size: bgIndices.byteLength,
+        usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(bgIndexBuffer, 0, bgIndices);
+
     function updateSubDiv()
     {
         positions = [
@@ -125,12 +146,12 @@ async function main() {
     });
 
     const cubemap = [
-        'cm_left.png',
         'cm_right.png',
+        'cm_left.png',
         'cm_top.png',
         'cm_bottom.png',
-        'cm_back.png',
-        'cm_front.png'
+        'cm_front.png',
+        'cm_back.png'
     ];
 
     const imgs = await Promise.all(
@@ -166,7 +187,7 @@ async function main() {
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: 'cube' } },
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
         ],
     });
@@ -191,12 +212,12 @@ async function main() {
             entryPoint: 'fs',
             targets: [{ format }],
         },
-        primitive: { topology: 'triangle-list', frontFace: "ccw" ,cullMode: 'back' },
+        primitive: { topology: 'triangle-list', frontFace: "ccw" ,cullMode: 'none' },
     });
 
-    const uniformBuffers = [0].map(() =>
+    const uniformBuffers = [0, 1].map(() =>
         device.createBuffer({
-            size: sizeof['mat4'] * 2,
+            size: sizeof['mat4'] * 3,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         })
     );
@@ -206,7 +227,7 @@ async function main() {
             layout: pipeline.getBindGroupLayout(0),
             entries: [
                 { binding: 0, resource: { buffer: buf } },
-                { binding: 1, resource: cubeTexture.createView() },
+                { binding: 1, resource: cubeTexture.createView({dimension: 'cube'}) },
                 { binding: 2, resource: cubeSampler },
             ],
         })
@@ -214,7 +235,7 @@ async function main() {
 
     const aspect =
         (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
-    const projGL = perspective(45.0, aspect, 0.1, 100.0);
+    const proj = perspective(45.0, aspect, 0.1, 100.0);
 
     const zfix = mat4(
         1,0,0,0,
@@ -222,23 +243,45 @@ async function main() {
         0,0,0.5,0.5,
         0,0,0,1
     );
+    const projGL = mult(zfix, proj);
+
     const eye = vec3(radius * Math.sin(angleAlpha), 0, radius * Math.cos(angleAlpha));
     const at  = vec3(0,0,0);
     const up  = vec3(0, 1, 0);
-    var view = lookAt(eye, at, up);
+    let view = lookAt(eye, at, up);
 
     const baseModel = translate(0, 0, 0);
 
     function mvpFor(model) {
-        return mult(zfix, mult(projGL, mult(view, model)));
+        return mult(projGL, mult(view, model));
     }
 
     const modelOnePoint =
         mult(translate(0.0, 0.0, 0.0),
             mult(rotateX(-20), mult(rotateY(35), baseModel)));
 
-    const uniformData = new Float32Array([...flatten(mvpFor(modelOnePoint)), ...flatten(modelOnePoint)]);
-    device.queue.writeBuffer(uniformBuffers[0], 0, uniformData);
+    const uniformDataSphere = new Float32Array([
+        ...flatten(mvpFor(modelOnePoint)),
+        ...flatten(modelOnePoint),
+        ...flatten(mat4())
+    ]);
+    device.queue.writeBuffer(uniformBuffers[0], 0, uniformDataSphere);
+
+    const invProj = inverse(proj);
+    const viewRot = mat4(...flatten(view));
+    viewRot[0][3] = 0;
+    viewRot[1][3] = 0;
+    viewRot[2][3] = 0;
+    const invViewRot = inverse(viewRot);
+    const texMatrix = mult(invViewRot, invProj);
+
+    const uniformDataBg = new Float32Array([
+        ...flatten(mat4()),
+        ...flatten(mat4()),
+        ...flatten(texMatrix)
+    ]);
+    device.queue.writeBuffer(uniformBuffers[1], 0, uniformDataBg);
+
 
     const renderPass = {
         colorAttachments: [{
@@ -284,12 +327,17 @@ async function main() {
         const pass = encoder.beginRenderPass(renderPass);
 
         pass.setPipeline(pipeline);
+
+        pass.setBindGroup(0, bindGroups[1]);
+        pass.setVertexBuffer(0, bgVertexBuffer);
+        pass.setIndexBuffer(bgIndexBuffer, 'uint32');
+        pass.drawIndexed(bgIndices.length);
+
+        pass.setBindGroup(0, bindGroups[0]);
         pass.setVertexBuffer(0, vertexBuffer);
         pass.setIndexBuffer(indexBuffer, 'uint32');
-        for (let i = 0; i < 1; ++i) {
-            pass.setBindGroup(0, bindGroups[i]);
-            pass.drawIndexed(indexData.length);
-        }
+        pass.drawIndexed(indexData.length);
+
 
         pass.end();
         device.queue.submit([encoder.finish()]);
@@ -309,13 +357,33 @@ async function main() {
             mult(translate(0.0, 0.0, 0.0),
                 mult(rotateX(-20), mult(rotateY(35), baseModel)));
 
-        const uniformData = new Float32Array([...flatten(mvpFor(modelOnePoint)), ...flatten(modelOnePoint)]);
-        device.queue.writeBuffer(uniformBuffers[0], 0, uniformData);
+        const uniformDataSphere = new Float32Array([
+            ...flatten(mvpFor(modelOnePoint)),
+            ...flatten(modelOnePoint),
+            ...flatten(mat4())
+        ]);
+        device.queue.writeBuffer(uniformBuffers[0], 0, uniformDataSphere);
+
+        const invProj = inverse(proj);
+        const viewRot = mat4(...flatten(view));
+        viewRot[0][3] = 0;
+        viewRot[1][3] = 0;
+        viewRot[2][3] = 0;
+        const invViewRot = inverse(viewRot);
+        const texMatrix = mult(invViewRot, invProj);
+
+        const uniformDataBg = new Float32Array([
+            ...flatten(mat4()),
+            ...flatten(mat4()),
+            ...flatten(texMatrix)
+        ]);
+        device.queue.writeBuffer(uniformBuffers[1], 0, uniformDataBg);
+
         render();
         if (orbiting) requestAnimationFrame(animate);
     }
 
-    render();
+    animate();
 }
 
 window.addEventListener('load', main);
