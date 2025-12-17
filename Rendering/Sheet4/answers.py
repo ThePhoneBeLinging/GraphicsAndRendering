@@ -3,6 +3,7 @@ import math
 speedOfLight = 2.9979 * 10**8
 plancksConstant = 6.6261 * 10**-34
 
+# Elias
 def part1():
     print("Part 1:")
     efficiency = 0.2
@@ -16,7 +17,7 @@ def part1():
     photonsPerSecond = wattagePostEfficiency / e
     print(f"The number of photons per second is {photonsPerSecond}")
 
-
+# Emil
 def part2():
     print("Part 2:")
 
@@ -38,6 +39,7 @@ def part2():
     print(f"Emitted energy in 5 minutes (E): {energy:.2f} J")
     print(f"Surface area (A): {area:.8f} m²")
 
+# Elias
 def part3():
     print("Part 3:")
     voltage = 2.4
@@ -51,6 +53,7 @@ def part3():
     print(f"Irradiance at {distance} m: {irradiance:.6f} W/m²")
     print(f"Power through opening: {power_through_opening:.6f} W")
 
+# Emil
 def part4():
     print("Part 4:\n")
     power = 200
@@ -69,6 +72,7 @@ def part4():
     print(f"Irradiance at table (E_radiometric): {E_radiometric:.6f} W/m²")
     print(f"Illuminance at table (E_photometric): {E_photometric:.2f} lux")
 
+# Elias
 def part5():
     print("Part 5:")
     knownIntensity = 40
@@ -77,6 +81,7 @@ def part5():
     newIntensity = knownIntensity * (distanceToKnownSource / distanceToNewSource) ** 2
     print(f"New intensity at 0.65 m: {newIntensity:.2f} lux")
 
+# Emil
 def part6():
     print("Part 6:")
     L = 5000
@@ -98,6 +103,7 @@ def part6():
     print(f"Radiant flux (Φ): {Phi:.4f} W")
     print(f"Emitted energy in 1 s (E): {E:.4f} J")
 
+# Elias
 def part7():
     print("Part 7:")
     L0 = 6000
@@ -111,7 +117,7 @@ def part7():
     print(f"Radiant exitance (M): {M:.2f} W/m²")
     print(f"Power of the source (Φ): {Phi:.2f} W")
 
-
+# Emil
 def part8():
     print("Part 8:")
     Phi_sun = 3.91e26
@@ -156,6 +162,7 @@ def part8():
     print(f"Energy on 1 m² in 1 s (Mars) : {E1s_mars:.3f} J")
 
 
+# Elias
 def part9():
     print("Part 9:")
     L = 1000
