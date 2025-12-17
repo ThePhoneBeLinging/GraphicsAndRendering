@@ -186,7 +186,7 @@ async function main() {
 
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
-            { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+            { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
             { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: 'cube' } },
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
         ],
@@ -217,7 +217,7 @@ async function main() {
 
     const uniformBuffers = [0, 1].map(() =>
         device.createBuffer({
-            size: sizeof['mat4'] * 3,
+            size: sizeof['mat4'] * 3 + 16, // 3 matrices, 1 vec3f (padded), 1 u32
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         })
     );
@@ -260,11 +260,13 @@ async function main() {
         mult(translate(0.0, 0.0, 0.0),
             mult(rotateX(-20), mult(rotateY(35), baseModel)));
 
-    const uniformDataSphere = new Float32Array([
-        ...flatten(mvpFor(modelOnePoint)),
-        ...flatten(modelOnePoint),
-        ...flatten(mat4())
-    ]);
+    const uniformDataSphere = new Float32Array(sizeof['mat4'] * 3 / 4 + 4);
+    uniformDataSphere.set(flatten(mvpFor(modelOnePoint)));
+    uniformDataSphere.set(flatten(modelOnePoint), sizeof['mat4'] / 4);
+    uniformDataSphere.set(flatten(mat4()), sizeof['mat4'] * 2 / 4);
+    uniformDataSphere.set(flatten(eye), sizeof['mat4'] * 3 / 4);
+    const uniformDataSphereU32 = new Uint32Array(uniformDataSphere.buffer);
+    uniformDataSphereU32[sizeof['mat4'] * 3 / 4 + 3] = 1;
     device.queue.writeBuffer(uniformBuffers[0], 0, uniformDataSphere);
 
     const invProj = inverse(proj);
@@ -275,11 +277,12 @@ async function main() {
     const invViewRot = inverse(viewRot);
     const texMatrix = mult(invViewRot, invProj);
 
-    const uniformDataBg = new Float32Array([
-        ...flatten(mat4()),
-        ...flatten(mat4()),
-        ...flatten(texMatrix)
-    ]);
+    const uniformDataBg = new Float32Array(sizeof['mat4'] * 3 / 4 + 4);
+    uniformDataBg.set(flatten(mat4()));
+    uniformDataBg.set(flatten(mat4()), sizeof['mat4'] / 4);
+    uniformDataBg.set(flatten(texMatrix), sizeof['mat4'] * 2 / 4);
+    const uniformDataBgU32 = new Uint32Array(uniformDataBg.buffer);
+    uniformDataBgU32[sizeof['mat4'] * 3 / 4 + 3] = 0;
     device.queue.writeBuffer(uniformBuffers[1], 0, uniformDataBg);
 
 
@@ -357,11 +360,13 @@ async function main() {
             mult(translate(0.0, 0.0, 0.0),
                 mult(rotateX(-20), mult(rotateY(35), baseModel)));
 
-        const uniformDataSphere = new Float32Array([
-            ...flatten(mvpFor(modelOnePoint)),
-            ...flatten(modelOnePoint),
-            ...flatten(mat4())
-        ]);
+        const uniformDataSphere = new Float32Array(sizeof['mat4'] * 3 / 4 + 4);
+        uniformDataSphere.set(flatten(mvpFor(modelOnePoint)));
+        uniformDataSphere.set(flatten(modelOnePoint), sizeof['mat4'] / 4);
+        uniformDataSphere.set(flatten(mat4()), sizeof['mat4'] * 2 / 4);
+        uniformDataSphere.set(flatten(eye), sizeof['mat4'] * 3 / 4);
+        const uniformDataSphereU32 = new Uint32Array(uniformDataSphere.buffer);
+        uniformDataSphereU32[sizeof['mat4'] * 3 / 4 + 3] = 1;
         device.queue.writeBuffer(uniformBuffers[0], 0, uniformDataSphere);
 
         const invProj = inverse(proj);
@@ -372,11 +377,12 @@ async function main() {
         const invViewRot = inverse(viewRot);
         const texMatrix = mult(invViewRot, invProj);
 
-        const uniformDataBg = new Float32Array([
-            ...flatten(mat4()),
-            ...flatten(mat4()),
-            ...flatten(texMatrix)
-        ]);
+        const uniformDataBg = new Float32Array(sizeof['mat4'] * 3 / 4 + 4);
+        uniformDataBg.set(flatten(mat4()));
+        uniformDataBg.set(flatten(mat4()), sizeof['mat4'] / 4);
+        uniformDataBg.set(flatten(texMatrix), sizeof['mat4'] * 2 / 4);
+        const uniformDataBgU32 = new Uint32Array(uniformDataBg.buffer);
+        uniformDataBgU32[sizeof['mat4'] * 3 / 4 + 3] = 0;
         device.queue.writeBuffer(uniformBuffers[1], 0, uniformDataBg);
 
         render();
