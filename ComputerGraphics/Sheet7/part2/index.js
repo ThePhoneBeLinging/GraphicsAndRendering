@@ -171,7 +171,7 @@ async function main() {
 
     for (let i = 0; i < 6; i++) {
         device.queue.copyExternalImageToTexture(
-            { source: imgs[i] },
+            { source: imgs[i], flipY: true },
             { texture: cubeTexture, origin: [0, 0, i] },
             [imgs[i].width, imgs[i].height]
         );
