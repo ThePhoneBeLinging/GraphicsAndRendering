@@ -15,130 +15,39 @@ async function main() {
     const module = device.createShaderModule({ code: wgslCode });
 
     const groundPositions = [
-        vec3(-2.0, -1.0, -1.0),
-        vec3(2.0, -1.0, -1.0),
-        vec3(2.0, -1.0, -5.0),
-        vec3(-2.0, -1.0, -5.0),
+        vec3(-2.5, -1.0, -1.0),
+        vec3(2.5, -1.0, -1.0),
+        vec3(2.5, -1.0, -6.0),
+        vec3(-2.5, -1.0, -6.0),
     ];
-    const groundIndices = [0, 1, 2, 0, 2, 3];
-
-    const redQuad1Positions = [
-        vec3(0.25, -0.5, -1.25),
-        vec3(0.75, -0.5, -1.25),
-        vec3(0.75, -0.5, -1.75),
-        vec3(0.25, -0.5, -1.75),
-    ];
-    const redQuad1Indices = [4, 5, 6, 4, 6, 7];
-
-    const redQuad2Positions = [
-        vec3(-1.0, -1.0, -2.5),
-        vec3(-1.0, 0.0, -2.5),
-        vec3(-1.0, 0.0, -3.0),
-        vec3(-1.0, -1.0, -3.0),
-    ];
-    const redQuad2Indices = [8, 9, 10, 8, 10, 11];
-
-    const positions = [...groundPositions, ...redQuad1Positions, ...redQuad2Positions];
-    const indices = [...groundIndices, ...redQuad1Indices, ...redQuad2Indices];
-
-    const groundTexcoords = [
+    const groundIndices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+    const groundTexcoords = new Float32Array([
         0.0, 0.0,
         1.0, 0.0,
         1.0, 1.0,
         0.0, 1.0,
-    ];
+    ]);
 
-    // Dummy texcoords for red quads
-    const redQuadTexcoords = [
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    ];
-
-    const texcoords = new Float32Array([...groundTexcoords, ...redQuadTexcoords]);
-
-    let indexData = new Uint32Array(indices);
-    let positionData = flatten(positions);
-
-    var vertexBuffer = device.createBuffer({
+    const positionData = flatten(groundPositions);
+    const groundPositionBuffer = device.createBuffer({
         size: positionData.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(vertexBuffer, 0, positionData);
+    device.queue.writeBuffer(groundPositionBuffer, 0, positionData);
 
-    var texCoordBuffer = device.createBuffer({
-        size: texcoords.byteLength,
+    const groundTexcoordBuffer = device.createBuffer({
+        size: groundTexcoords.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(texCoordBuffer, 0, texcoords);
+    device.queue.writeBuffer(groundTexcoordBuffer, 0, groundTexcoords);
 
-    var indexBuffer = device.createBuffer({
-        size: indexData.byteLength,
+    const groundIndexBuffer = device.createBuffer({
+        size: groundIndices.byteLength,
         usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(indexBuffer, 0, indexData);
+    device.queue.writeBuffer(groundIndexBuffer, 0, groundIndices);
 
-    // Placeholder for xamp23.png
-    const groundTexture = await (async () => {
-        try {
-            const response = await fetch('xamp23.png');
-            const blob = await response.blob();
-            const source = await createImageBitmap(blob);
-            const texture = device.createTexture({
-                size: [source.width, source.height, 1],
-                format: 'rgba8unorm',
-                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-            });
-            device.queue.copyExternalImageToTexture(
-                { source },
-                { texture },
-                [source.width, source.height]
-            );
-            return texture;
-        } catch (e) {
-            console.error("Could not load xamp23.png, using checkerboard texture instead.", e);
-            const texSize = 64;
-            const checker = new Uint8Array(texSize * texSize * 4);
-            for (let y = 0; y < texSize; ++y) {
-                for (let x = 0; x < texSize; ++x) {
-                    const xs = Math.floor(x / (texSize / 8));
-                    const ys = Math.floor(y / (texSize / 8));
-                    const v = ((xs + ys) % 2) === 0 ? 0 : 255;
-                    const idx = (y * texSize + x) * 4;
-                    checker[idx] = v;
-                    checker[idx + 1] = v;
-                    checker[idx + 2] = v;
-                    checker[idx + 3] = 255;
-                }
-            }
-            const texture = device.createTexture({
-                size: { width: texSize, height: texSize, depthOrArrayLayers: 1 },
-                format: 'rgba8unorm',
-                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-            });
-            device.queue.writeTexture(
-                { texture: texture },
-                checker,
-                { bytesPerRow: texSize * 4 },
-                { width: texSize, height: texSize, depthOrArrayLayers: 1 }
-            );
-            return texture;
-        }
-    })();
-
-
-    const redTexture = device.createTexture({
-        size: { width: 1, height: 1, depthOrArrayLayers: 1 },
-        format: 'rgba8unorm',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-
-    device.queue.writeTexture(
-        { texture: redTexture },
-        new Uint8Array([255, 0, 0, 255]),
-        { bytesPerRow: 4 },
-        { width: 1, height: 1, depthOrArrayLayers: 1 }
-    );
-
+    const groundTexture = await loadTexture(device, 'xamp23.png');
     const sampler = device.createSampler({
         addressModeU: 'repeat',
         addressModeV: 'repeat',
@@ -146,52 +55,44 @@ async function main() {
         minFilter: 'linear',
     });
 
-    const bindGroupLayout = device.createBindGroupLayout({
+    const groundUniformBuffer = device.createBuffer({
+        size: 64,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const teapotUniformBuffer = device.createBuffer({
+        size: 160,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const groundBindGroupLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
             { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         ],
     });
-    const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
+
+    const teapotBindGroupLayout = device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        ],
+    });
+
+    const groundBindGroup = device.createBindGroup({
+        layout: groundBindGroupLayout,
+        entries: [
+            { binding: 0, resource: { buffer: groundUniformBuffer } },
+            { binding: 1, resource: sampler },
+            { binding: 2, resource: groundTexture.createView() },
+        ],
+    });
+
+    const teapotBindGroup = device.createBindGroup({
+        layout: teapotBindGroupLayout,
+        entries: [{ binding: 0, resource: { buffer: teapotUniformBuffer } }],
+    });
+
     const depthFormat = 'depth24plus';
-
-    function createPipeline(depthCompare, depthWriteEnabled) {
-        return device.createRenderPipeline({
-            layout: pipelineLayout,
-            vertex: {
-                module,
-                entryPoint: 'vs',
-                buffers: [
-                    {
-                        // positions
-                        arrayStride: 12, // 3 * 4
-                        attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
-                    },
-                    {
-                        // texcoords
-                        arrayStride: 8, // 2 * 4
-                        attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }],
-                    },
-                ],
-            },
-            fragment: {
-                module,
-                entryPoint: 'fs',
-                targets: [{ format }],
-            },
-            primitive: { topology: 'triangle-list', cullMode: 'none' },
-            depthStencil: {
-                format: depthFormat,
-                depthWriteEnabled,
-                depthCompare,
-            },
-        });
-    }
-
-    const scenePipeline = createPipeline('less', true);
-    const shadowPipeline = createPipeline('greater', false);
-
     let depthTexture = null;
     let depthTextureView = null;
     const depthSize = { width: 0, height: 0 };
@@ -212,64 +113,115 @@ async function main() {
     }
     updateDepthTexture();
 
-    function createUniformBuffer() {
-        return device.createBuffer({
-            size: 96,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+    const groundPipeline = device.createRenderPipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [groundBindGroupLayout] }),
+        vertex: {
+            module,
+            entryPoint: 'ground_vs',
+            buffers: [
+                {
+                    arrayStride: 12,
+                    attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+                },
+                {
+                    arrayStride: 8,
+                    attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }],
+                },
+            ],
+        },
+        fragment: {
+            module,
+            entryPoint: 'ground_fs',
+            targets: [{ format }],
+        },
+        primitive: { topology: 'triangle-list', cullMode: 'back' },
+        depthStencil: {
+            format: depthFormat,
+            depthWriteEnabled: true,
+            depthCompare: 'less',
+        },
+    });
+
+    const teapotPipeline = device.createRenderPipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [groundBindGroupLayout, teapotBindGroupLayout] }),
+        vertex: {
+            module,
+            entryPoint: 'teapot_vs',
+            buffers: [
+                {
+                    arrayStride: 24,
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x3' },
+                        { shaderLocation: 1, offset: 12, format: 'float32x3' },
+                    ],
+                },
+            ],
+        },
+        fragment: {
+            module,
+            entryPoint: 'teapot_fs',
+            targets: [{ format }],
+        },
+        primitive: { topology: 'triangle-list', cullMode: 'back' },
+        depthStencil: {
+            format: depthFormat,
+            depthWriteEnabled: true,
+            depthCompare: 'less',
+        },
+    });
+
+    const teapotMesh = await loadTeapotMesh(device);
+    if (!teapotMesh) {
+        alert('Failed to load teapot mesh.');
+        return;
     }
 
-    const staticUniformBuffer = createUniformBuffer();
-    const shadowUniformBuffer = createUniformBuffer();
-
-    const groundBindGroup = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [
-            { binding: 0, resource: { buffer: staticUniformBuffer } },
-            { binding: 1, resource: sampler },
-            { binding: 2, resource: groundTexture.createView() },
-        ],
-    });
-
-    const redBindGroup = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [
-            { binding: 0, resource: { buffer: staticUniformBuffer } },
-            { binding: 1, resource: sampler },
-            { binding: 2, resource: redTexture.createView() },
-        ],
-    });
-
-    const shadowBindGroup = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [
-            { binding: 0, resource: { buffer: shadowUniformBuffer } },
-            { binding: 1, resource: sampler },
-            { binding: 2, resource: redTexture.createView() },
-        ],
-    });
+    const toggleButton = document.getElementById('toggle-jump');
+    let jumping = true;
+    const updateToggleLabel = () => {
+        if (toggleButton) {
+            toggleButton.textContent = jumping ? 'Pause Jump' : 'Resume Jump';
+        }
+    };
+    if (toggleButton) {
+        toggleButton.addEventListener('click', () => {
+            jumping = !jumping;
+            updateToggleLabel();
+        });
+        updateToggleLabel();
+    }
 
     const aspect = (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
-    const projGL = perspective(90.0, aspect, 0.1, 100.0);
-    const view = mat4();
-    function mvpFor(model) {
-        const zfix = mat4(
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 0.5, 0.5,
-            0, 0, 0, 1
-        );
-        return mult(zfix, mult(projGL, mult(view, model)));
-    }
+    const projection = perspective(60.0, aspect, 0.1, 100.0);
+    const eye = vec3(0.0, 1.5, 3.5);
+    const at = vec3(0.0, -0.5, -3.0);
+    const up = vec3(0.0, 1.0, 0.0);
+    const view = lookAt(eye, at, up);
+    const zFix = mat4(
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 0.5, 0.5,
+        0, 0, 0, 1
+    );
+    const computeMVP = (model) => mult(zFix, mult(projection, mult(view, model)));
 
-    const planeNormal = vec3(0.0, 1.0, 0.0);
-    const shadowPlaneOffset = 0.01;
-    const planeD = 1.0 + shadowPlaneOffset;
-    const baseModel = mat4();
+    const groundUniformData = new Float32Array(16);
+    groundUniformData.set(flatten(computeMVP(mat4())));
+    device.queue.writeBuffer(groundUniformBuffer, 0, groundUniformData);
+
+    const teapotUniformData = new Float32Array(40);
+    const eyeVec = new Float32Array([eye[0], eye[1], eye[2], 1.0]);
+
+    const teapotScale = scalem(0.25, 0.25, 0.25);
+    const bounceMin = -1.0;
+    const bounceMax = 0.5;
+    const bounceMid = (bounceMin + bounceMax) * 0.5;
+    const bounceAmp = (bounceMax - bounceMin) * 0.5;
+    const bounceSpeed = 1.5;
+
     const lightCenter = vec3(0.0, 2.0, -2.0);
     const lightRadius = 2.0;
     const lightSpeed = 0.5;
-
     function getLightPosition(timeSeconds) {
         const angle = timeSeconds * lightSpeed;
         const x = lightCenter[0] + lightRadius * Math.cos(angle);
@@ -277,46 +229,10 @@ async function main() {
         return vec4(x, lightCenter[1], z, 1.0);
     }
 
-    function computeShadowMatrix(lightPos) {
-        const a = planeNormal[0];
-        const b = planeNormal[1];
-        const c = planeNormal[2];
-        const d = planeD;
-        const lx = lightPos[0];
-        const ly = lightPos[1];
-        const lz = lightPos[2];
-        const lw = lightPos[3];
-        const dot = a * lx + b * ly + c * lz + d * lw;
-        return mat4(
-            dot - lx * a,    -lx * b,         -lx * c,         -lx * d,
-            -ly * a,          dot - ly * b,    -ly * c,         -ly * d,
-            -lz * a,          -lz * b,         dot - lz * c,    -lz * d,
-            -lw * a,          -lw * b,         -lw * c,         dot - lw * d
-        );
-    }
-
-    function createUniformValues() {
-        const values = new Float32Array(24);
-        values[17] = 0;
-        values[18] = 0;
-        values[19] = 0;
-        return values;
-    }
-
-    const staticUniformValues = createUniformValues();
-    const shadowUniformValues = createUniformValues();
-
-    function writeUniforms(buffer, values, modelMatrix, visibility) {
-        const mvp = mvpFor(modelMatrix);
-        values.set(flatten(mvp), 0);
-        values[16] = visibility;
-        device.queue.writeBuffer(buffer, 0, values);
-    }
-
-    const renderPass = {
+    const renderPassDescriptor = {
         colorAttachments: [{
             view: undefined,
-            clearValue: { r: 0.3921, g: 0.5843, b: 0.9294, a: 1 },
+            clearValue: { r: 0.2, g: 0.3, b: 0.5, a: 1.0 },
             loadOp: 'clear',
             storeOp: 'store',
         }],
@@ -329,40 +245,37 @@ async function main() {
     };
 
     function render(time = 0) {
-        const timeSeconds = time * 0.001;
-        const lightPosition = getLightPosition(timeSeconds);
-        const shadowMatrix = computeShadowMatrix(lightPosition);
-        const shadowModel = mult(shadowMatrix, baseModel);
+        const seconds = time * 0.001;
+        const yOffset = jumping ? bounceMid + bounceAmp * Math.sin(seconds * bounceSpeed) : bounceMin;
+        const model = mult(translate(0.0, yOffset, -3.0), teapotScale);
+        const mvp = computeMVP(model);
+        const lightPos = getLightPosition(seconds);
 
-        writeUniforms(staticUniformBuffer, staticUniformValues, baseModel, 1.0);
-        writeUniforms(shadowUniformBuffer, shadowUniformValues, shadowModel, 0.0);
+        teapotUniformData.set(flatten(mvp), 0);
+        teapotUniformData.set(flatten(model), 16);
+        teapotUniformData.set(lightPos, 32);
+        teapotUniformData.set(eyeVec, 36);
+        device.queue.writeBuffer(teapotUniformBuffer, 0, teapotUniformData);
 
         updateDepthTexture();
-        renderPass.colorAttachments[0].view = context.getCurrentTexture().createView();
-        renderPass.depthStencilAttachment.view = depthTextureView;
+        renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
+        renderPassDescriptor.depthStencilAttachment.view = depthTextureView;
+
         const encoder = device.createCommandEncoder();
-        const pass = encoder.beginRenderPass(renderPass);
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
 
-        pass.setPipeline(scenePipeline);
-        pass.setVertexBuffer(0, vertexBuffer);
-        pass.setVertexBuffer(1, texCoordBuffer);
-        pass.setIndexBuffer(indexBuffer, 'uint32');
-
-        // Draw ground
+        pass.setPipeline(groundPipeline);
+        pass.setVertexBuffer(0, groundPositionBuffer);
+        pass.setVertexBuffer(1, groundTexcoordBuffer);
+        pass.setIndexBuffer(groundIndexBuffer, 'uint16');
         pass.setBindGroup(0, groundBindGroup);
-        pass.drawIndexed(groundIndices.length, 1, 0, 0, 0);
+        pass.drawIndexed(groundIndices.length);
 
-        // Draw shadows before the actual geometry so they appear between the ground and the quads
-        pass.setPipeline(shadowPipeline);
-        pass.setBindGroup(0, shadowBindGroup);
-        pass.drawIndexed(redQuad1Indices.length, 1, groundIndices.length, 0, 0);
-        pass.drawIndexed(redQuad2Indices.length, 1, groundIndices.length + redQuad1Indices.length, 0, 0);
-
-        // Draw red quads last
-        pass.setPipeline(scenePipeline);
-        pass.setBindGroup(0, redBindGroup);
-        pass.drawIndexed(redQuad1Indices.length, 1, groundIndices.length, 0, 0);
-        pass.drawIndexed(redQuad2Indices.length, 1, groundIndices.length + redQuad1Indices.length, 0, 0);
+        pass.setPipeline(teapotPipeline);
+        pass.setVertexBuffer(0, teapotMesh.vertexBuffer);
+        pass.setBindGroup(0, groundBindGroup);
+        pass.setBindGroup(1, teapotBindGroup);
+        pass.draw(teapotMesh.vertexCount);
 
         pass.end();
         device.queue.submit([encoder.finish()]);
@@ -370,6 +283,86 @@ async function main() {
     }
 
     requestAnimationFrame(render);
+
+    async function loadTexture(device, filename) {
+        try {
+            const response = await fetch(filename);
+            const blob = await response.blob();
+            const image = await createImageBitmap(blob, { colorSpaceConversion: 'none' });
+            const texture = device.createTexture({
+                size: [image.width, image.height, 1],
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+            });
+            device.queue.copyExternalImageToTexture(
+                { source: image, flipY: true },
+                { texture },
+                { width: image.width, height: image.height }
+            );
+            return texture;
+        } catch (error) {
+            console.warn('Falling back to checkerboard texture:', error);
+            const texSize = 64;
+            const checker = new Uint8Array(texSize * texSize * 4);
+            for (let y = 0; y < texSize; ++y) {
+                for (let x = 0; x < texSize; ++x) {
+                    const cell = ((Math.floor(x / 8) + Math.floor(y / 8)) % 2) === 0 ? 220 : 120;
+                    const idx = (y * texSize + x) * 4;
+                    checker[idx + 0] = cell;
+                    checker[idx + 1] = cell;
+                    checker[idx + 2] = cell;
+                    checker[idx + 3] = 255;
+                }
+            }
+            const texture = device.createTexture({
+                size: [texSize, texSize, 1],
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            });
+            device.queue.writeTexture(
+                { texture },
+                checker,
+                { bytesPerRow: texSize * 4 },
+                { width: texSize, height: texSize, depthOrArrayLayers: 1 }
+            );
+            return texture;
+        }
+    }
+
+    async function loadTeapotMesh(device) {
+        const obj = await readOBJFile('../teapot/teapot.obj', 1, true);
+        if (!obj) {
+            return null;
+        }
+        const vertexStorage = obj.vertices;
+        const normalStorage = obj.normals;
+        const indexStorage = obj.indices;
+        const faceCount = obj.mat_indices.length;
+        const floatsPerVertex = 6;
+        const vertices = new Float32Array(faceCount * 3 * floatsPerVertex);
+        let cursor = 0;
+        let dst = 0;
+        for (let face = 0; face < faceCount; ++face) {
+            for (let i = 0; i < 3; ++i) {
+                const idx = indexStorage[cursor++];
+                const base = idx * 4;
+                vertices[dst++] = vertexStorage[base + 0];
+                vertices[dst++] = vertexStorage[base + 1];
+                vertices[dst++] = vertexStorage[base + 2];
+                vertices[dst++] = normalStorage[base + 0];
+                vertices[dst++] = normalStorage[base + 1];
+                vertices[dst++] = normalStorage[base + 2];
+            }
+            cursor++; // skip material index per face
+        }
+
+        const vertexBuffer = device.createBuffer({
+            size: vertices.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(vertexBuffer, 0, vertices);
+        return { vertexBuffer, vertexCount: vertices.length / floatsPerVertex };
+    }
 }
 
 window.addEventListener('load', main);
