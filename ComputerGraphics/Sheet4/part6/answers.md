@@ -1,4 +1,7 @@
+Main responsible: Emil
+
 a)
+
 
 - Flat shading: Lighting is calculated once per triangle using the triangle’s normal. Every pixel on the triangle has the same color, so it looks blocky.
 - Gouraud shading: Lighting is calculated at each vertex of the triangle, then the colors are blended across the triangle. It’s fast, but shiny spots can look weird or be missing.

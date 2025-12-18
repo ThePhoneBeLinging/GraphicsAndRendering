@@ -1,5 +1,5 @@
 # Part 3
-
+Main responsible: Elias
 ## Model Matrix
 Translation matrix: T(tx, ty, tz)
 x Rotation matrix: Rx(θ)
