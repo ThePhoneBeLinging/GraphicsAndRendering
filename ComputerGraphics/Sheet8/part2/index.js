@@ -180,9 +180,8 @@ async function main() {
         primitive: { topology: 'triangle-list', cullMode: 'none' },
     });
 
-    const uniformBuffer = device.createBuffer({
         size: 64, // mat4
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        size: 64, // mat4
     });
 
     const groundBindGroup = device.createBindGroup({
@@ -220,9 +219,7 @@ async function main() {
     const model = mat4();
     device.queue.writeBuffer(uniformBuffer, 0, flatten(mvpFor(model)));
 
-    const renderPass = {
-        colorAttachments: [{
-            view: undefined,
+    device.queue.writeBuffer(uniformBuffer, 0, flatten(mvpFor(model)));
             clearValue: { r: 0.3921, g: 0.5843, b: 0.9294, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',
@@ -233,8 +230,7 @@ async function main() {
         renderPass.colorAttachments[0].view = context.getCurrentTexture().createView();
         const encoder = device.createCommandEncoder();
         const pass = encoder.beginRenderPass(renderPass);
-
-        pass.setPipeline(pipeline);
+    function render() {
         pass.setVertexBuffer(0, vertexBuffer);
         pass.setVertexBuffer(1, texCoordBuffer);
         pass.setIndexBuffer(indexBuffer, 'uint32');
@@ -246,15 +242,5 @@ async function main() {
         // Draw red quads
         pass.setBindGroup(0, redBindGroup);
         pass.drawIndexed(redQuad1Indices.length, 1, groundIndices.length, 0, 0);
-        pass.drawIndexed(redQuad2Indices.length, 1, groundIndices.length + redQuad1Indices.length, 0, 0);
-
-        pass.end();
-        device.queue.submit([encoder.finish()]);
-    }
-
-    render();
-}
 
 window.addEventListener('load', main);
-
-
