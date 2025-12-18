@@ -156,7 +156,7 @@ async function main() {
     const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
     const depthFormat = 'depth24plus';
 
-    function createPipeline(depthCompare, depthWriteEnabled, blend = null) {
+    function createPipeline(depthCompare, depthWriteEnabled) {
         return device.createRenderPipeline({
             layout: pipelineLayout,
             vertex: {
@@ -178,10 +178,7 @@ async function main() {
             fragment: {
                 module,
                 entryPoint: 'fs',
-                targets: [{
-                    format,
-                    ...(blend ? { blend } : {}),
-                }],
+                targets: [{ format }],
             },
             primitive: { topology: 'triangle-list', cullMode: 'none' },
             depthStencil: {
@@ -192,12 +189,8 @@ async function main() {
         });
     }
 
-    const alphaBlend = {
-        color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-        alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-    };
     const scenePipeline = createPipeline('less', true);
-    const shadowPipeline = createPipeline('greater', false, alphaBlend);
+    const shadowPipeline = createPipeline('greater', false);
 
     let depthTexture = null;
     let depthTextureView = null;
@@ -276,7 +269,6 @@ async function main() {
     const lightCenter = vec3(0.0, 2.0, -2.0);
     const lightRadius = 2.0;
     const lightSpeed = 0.5;
-    const shadowAlpha = 0.6;
 
     function getLightPosition(timeSeconds) {
         const angle = timeSeconds * lightSpeed;
@@ -314,11 +306,10 @@ async function main() {
     const staticUniformValues = createUniformValues();
     const shadowUniformValues = createUniformValues();
 
-    function writeUniforms(buffer, values, modelMatrix, visibility, alpha) {
+    function writeUniforms(buffer, values, modelMatrix, visibility) {
         const mvp = mvpFor(modelMatrix);
         values.set(flatten(mvp), 0);
         values[16] = visibility;
-        values[17] = alpha;
         device.queue.writeBuffer(buffer, 0, values);
     }
 
@@ -343,8 +334,8 @@ async function main() {
         const shadowMatrix = computeShadowMatrix(lightPosition);
         const shadowModel = mult(shadowMatrix, baseModel);
 
-        writeUniforms(staticUniformBuffer, staticUniformValues, baseModel, 1.0, 1.0);
-        writeUniforms(shadowUniformBuffer, shadowUniformValues, shadowModel, 0.0, shadowAlpha);
+        writeUniforms(staticUniformBuffer, staticUniformValues, baseModel, 1.0);
+        writeUniforms(shadowUniformBuffer, shadowUniformValues, shadowModel, 0.0);
 
         updateDepthTexture();
         renderPass.colorAttachments[0].view = context.getCurrentTexture().createView();
