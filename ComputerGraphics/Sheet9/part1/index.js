@@ -192,11 +192,8 @@ async function main() {
     }
 
     const aspect = (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
-    const projection = perspective(60.0, aspect, 0.1, 100.0);
-    const eye = vec3(0.0, 1.5, 3.5);
-    const at = vec3(0.0, -0.5, -3.0);
-    const up = vec3(0.0, 1.0, 0.0);
-    const view = lookAt(eye, at, up);
+    const projection = perspective(90.0, aspect, 0.1, 100.0);
+    const view = mat4();
     const zFix = mat4(
         1, 0, 0, 0,
         0, 1, 0, 0,
@@ -210,7 +207,7 @@ async function main() {
     device.queue.writeBuffer(groundUniformBuffer, 0, groundUniformData);
 
     const teapotUniformData = new Float32Array(40);
-    const eyeVec = new Float32Array([eye[0], eye[1], eye[2], 1.0]);
+    const eyeVec = new Float32Array([0.0, 0.0, 0.0, 1.0]);
 
     const teapotScale = scalem(0.25, 0.25, 0.25);
     const bounceMin = -1.0;
