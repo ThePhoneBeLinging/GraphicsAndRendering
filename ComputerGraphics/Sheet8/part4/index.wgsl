@@ -1,7 +1,8 @@
 struct Uniforms {
     mvp : mat4x4<f32>,
     visibility : f32,
-    _padding : vec3<f32>,
+    alpha : f32,
+    _padding : vec2<f32>,
 };
 @group(0) @binding(0) var<uniform> uniforms : Uniforms;
 
@@ -31,5 +32,5 @@ fn vs(input : VertexInput) -> VertexOutput {
 @fragment
 fn fs(input : VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(myTexture, mySampler, input.uv);
-    return vec4<f32>(color.rgb * uniforms.visibility, color.a);
+    return vec4<f32>(color.rgb * uniforms.visibility, uniforms.alpha);
 }
