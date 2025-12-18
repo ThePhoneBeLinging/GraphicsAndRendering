@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sheet9 - Part 5</title>
+    <script src="../../../MV.js"></script>
+    <script src="../../../OBJParser.js"></script>
+</head>
+<body>
+    <h1>Sheet9 - Part 5 - Elias</h1>
+    <p>
+        Projection shadows are attractive because they are extremely simple: we analytically project the caster 
+        onto a plane, so there is no extra render pass, no additional textures, and the performance cost is tiny. 
+        This simplicity also means there are severe limitations. Projection shadows only work for planar receivers,
+        they cannot produce self-shadowing, they always yield hard silhouettes, and the technique breaks down
+        when the scene has multiple receivers or curved surfaces. Shadow mapping, by contrast, renders the scene 
+        from the light's perspective and stores depth in a texture. This extra pass and texture memory introduce 
+        overhead and bring well-known artifacts such as aliasing, bias tuning, and filtering requirements, 
+        yet the benefits outweigh the drawbacks in most general scenes. Shadow mapping supports arbitrary 
+        receivers, self-shadowing, and can be extended with filtering to approximate soft shadows, which makes 
+        it far more versatile than projection shadows despite its higher implementation and tuning cost.
+    </p>
+</body>
+</html>
