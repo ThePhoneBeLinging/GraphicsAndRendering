@@ -57,11 +57,11 @@ async function main() {
 
     const depthFormat = 'depth24plus';
     const groundUniformBuffer = device.createBuffer({
-        size: 64,
+        size: 160,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     const teapotUniformBuffer = device.createBuffer({
-        size: 160,
+        size: 224,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     const lightUniformBuffer = device.createBuffer({
@@ -102,6 +102,7 @@ async function main() {
             { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
         ],
     });
+    const emptyBindGroupLayout = device.createBindGroupLayout({ entries: [] });
 
     const groundBindGroup = device.createBindGroup({
         layout: groundBindGroupLayout,
@@ -121,6 +122,7 @@ async function main() {
         layout: lightBindGroupLayout,
         entries: [{ binding: 0, resource: { buffer: lightUniformBuffer } }],
     });
+    const emptyBindGroup = device.createBindGroup({ layout: emptyBindGroupLayout, entries: [] });
     let depthTexture = null;
     let depthTextureView = null;
     const depthSize = { width: 0, height: 0 };
@@ -199,7 +201,7 @@ async function main() {
     });
 
     const lightPipeline = device.createRenderPipeline({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [lightBindGroupLayout] }),
+        layout: device.createPipelineLayout({ bindGroupLayouts: [emptyBindGroupLayout, emptyBindGroupLayout, lightBindGroupLayout] }),
         vertex: {
             module,
             entryPoint: 'light_vs',
@@ -259,19 +261,27 @@ async function main() {
         updateLightLabel();
     }
 
+    const aspect = (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
+    const projection = perspective(90.0, aspect, 0.1, 100.0);
+    const cameraEye = vec3(0.0, 1.5, 1.0);
+    const cameraAt = vec3(0.0, -0.5, -3.0);
+    const cameraUp = vec3(0.0, 1.0, 0.0);
+    const view = lookAt(cameraEye, cameraAt, cameraUp);
     const zFix = mat4(
         1, 0, 0, 0,
         0, 1, 0, 0,
         0, 0, 0.5, 0.5,
         0, 0, 0, 1
     );
+    const computeCameraMVP = (model) => mult(zFix, mult(projection, mult(view, model)));
 
-    const groundUniformData = new Float32Array(16);
+    const groundUniformData = new Float32Array(36);
 
-    const teapotUniformData = new Float32Array(40);
-    const eyeVec = new Float32Array([0.0, 0.0, 0.0, 1.0]);
+    const teapotUniformData = new Float32Array(56);
+    const eyeVec = new Float32Array([cameraEye[0], cameraEye[1], cameraEye[2], 1.0]);
     const lightUniformData = new Float32Array(16);
 
+    const groundModel = mat4();
     const teapotScale = scalem(0.25, 0.25, 0.25);
     const bounceMin = -1.0;
     const bounceMax = 0.5;
@@ -331,6 +341,8 @@ async function main() {
         }
         const yOffset = jumping ? bounceMid + bounceAmp * Math.sin(seconds * bounceSpeed) : bounceMin;
         const model = mult(translate(0.0, yOffset, -3.0), teapotScale);
+        const groundMVP = computeCameraMVP(groundModel);
+        const teapotMVP = computeCameraMVP(model);
         const lightPos = getLightPosition(lightAngle);
         const lightEye = vec3(lightPos[0], lightPos[1], lightPos[2]);
         const lightView = lookAt(lightEye, lightTarget, lightUp);
@@ -338,22 +350,25 @@ async function main() {
         const groundLightMVP = mult(lightVP, mat4());
         const teapotLightMVP = mult(lightVP, model);
 
-        groundUniformData.set(flatten(groundLightMVP));
+        groundUniformData.set(flatten(groundMVP), 0);
+        groundUniformData.set(flatten(groundLightMVP), 16);
+        groundUniformData.set(lightPos, 32);
         device.queue.writeBuffer(groundUniformBuffer, 0, groundUniformData);
 
-        teapotUniformData.set(flatten(teapotLightMVP), 0);
+        teapotUniformData.set(flatten(teapotMVP), 0);
         teapotUniformData.set(flatten(model), 16);
-        teapotUniformData.set(lightPos, 32);
-        teapotUniformData.set(eyeVec, 36);
+        teapotUniformData.set(flatten(teapotLightMVP), 32);
+        teapotUniformData.set(lightPos, 48);
+        teapotUniformData.set(eyeVec, 52);
         device.queue.writeBuffer(teapotUniformBuffer, 0, teapotUniformData);
 
         const encoder = device.createCommandEncoder();
 
-        lightUniformData.set(flatten(groundLightMVP));
-        device.queue.writeBuffer(lightUniformBuffer, 0, lightUniformData);
         const shadowPass = encoder.beginRenderPass(shadowPassDescriptor);
         shadowPass.setPipeline(lightPipeline);
-        shadowPass.setBindGroup(0, lightBindGroup);
+        shadowPass.setBindGroup(0, emptyBindGroup);
+        shadowPass.setBindGroup(1, emptyBindGroup);
+        shadowPass.setBindGroup(2, lightBindGroup);
         lightUniformData.set(flatten(teapotLightMVP));
         device.queue.writeBuffer(lightUniformBuffer, 0, lightUniformData);
         shadowPass.setVertexBuffer(0, teapotMesh.shadowVertexBuffer);
