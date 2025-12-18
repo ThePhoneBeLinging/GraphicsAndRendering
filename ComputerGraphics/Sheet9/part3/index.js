@@ -51,10 +51,11 @@ async function main() {
     const sampler = device.createSampler({
         addressModeU: 'repeat',
         addressModeV: 'repeat',
-        magFilter: 'linear',
-        minFilter: 'linear',
+        magFilter: 'nearest',
+        minFilter: 'nearest',
     });
 
+    const depthFormat = 'depth24plus';
     const groundUniformBuffer = device.createBuffer({
         size: 64,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -63,16 +64,31 @@ async function main() {
         size: 160,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    const shadowUniformBuffer = device.createBuffer({
+    const lightUniformBuffer = device.createBuffer({
         size: 64,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
+    const shadowMapSize = 1024;
+    const shadowTexture = device.createTexture({
+        size: [shadowMapSize, shadowMapSize, 1],
+        format: 'rgba32float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    const shadowTextureView = shadowTexture.createView();
+    const shadowDepthTexture = device.createTexture({
+        size: [shadowMapSize, shadowMapSize, 1],
+        format: depthFormat,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    const shadowDepthTextureView = shadowDepthTexture.createView();
+
     const groundBindGroupLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-            { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+            { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
         ],
     });
 
@@ -81,7 +97,7 @@ async function main() {
             { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         ],
     });
-    const shadowBindGroupLayout = device.createBindGroupLayout({
+    const lightBindGroupLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
         ],
@@ -93,6 +109,7 @@ async function main() {
             { binding: 0, resource: { buffer: groundUniformBuffer } },
             { binding: 1, resource: sampler },
             { binding: 2, resource: groundTexture.createView() },
+            { binding: 3, resource: shadowTextureView },
         ],
     });
 
@@ -100,12 +117,10 @@ async function main() {
         layout: teapotBindGroupLayout,
         entries: [{ binding: 0, resource: { buffer: teapotUniformBuffer } }],
     });
-    const shadowBindGroup = device.createBindGroup({
-        layout: shadowBindGroupLayout,
-        entries: [{ binding: 0, resource: { buffer: shadowUniformBuffer } }],
+    const lightBindGroup = device.createBindGroup({
+        layout: lightBindGroupLayout,
+        entries: [{ binding: 0, resource: { buffer: lightUniformBuffer } }],
     });
-
-    const depthFormat = 'depth24plus';
     let depthTexture = null;
     let depthTextureView = null;
     const depthSize = { width: 0, height: 0 };
@@ -183,28 +198,28 @@ async function main() {
         },
     });
 
-    const shadowPipeline = device.createRenderPipeline({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [shadowBindGroupLayout] }),
+    const lightPipeline = device.createRenderPipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [lightBindGroupLayout] }),
         vertex: {
             module,
-            entryPoint: 'shadow_vs',
+            entryPoint: 'light_vs',
             buffers: [
                 {
-                    arrayStride: 24,
+                    arrayStride: 12,
                     attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
                 },
             ],
         },
         fragment: {
             module,
-            entryPoint: 'shadow_fs',
-            targets: [{ format }],
+            entryPoint: 'light_fs',
+            targets: [{ format: 'rgba32float' }],
         },
-        primitive: { topology: 'triangle-list', cullMode: 'none' },
+        primitive: { topology: 'triangle-list', cullMode: 'back' },
         depthStencil: {
             format: depthFormat,
-            depthWriteEnabled: false,
-            depthCompare: 'greater',
+            depthWriteEnabled: true,
+            depthCompare: 'less',
         },
     });
 
@@ -244,24 +259,18 @@ async function main() {
         updateLightLabel();
     }
 
-    const aspect = (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
-    const projection = perspective(90.0, aspect, 0.1, 100.0);
-    const view = mat4();
     const zFix = mat4(
         1, 0, 0, 0,
         0, 1, 0, 0,
         0, 0, 0.5, 0.5,
         0, 0, 0, 1
     );
-    const computeMVP = (model) => mult(zFix, mult(projection, mult(view, model)));
 
     const groundUniformData = new Float32Array(16);
-    groundUniformData.set(flatten(computeMVP(mat4())));
-    device.queue.writeBuffer(groundUniformBuffer, 0, groundUniformData);
 
     const teapotUniformData = new Float32Array(40);
     const eyeVec = new Float32Array([0.0, 0.0, 0.0, 1.0]);
-    const shadowUniformData = new Float32Array(16);
+    const lightUniformData = new Float32Array(16);
 
     const teapotScale = scalem(0.25, 0.25, 0.25);
     const bounceMin = -1.0;
@@ -273,32 +282,15 @@ async function main() {
     const lightCenter = vec3(0.0, 2.0, -2.0);
     const lightRadius = 2.0;
     const lightSpeed = 0.5;
-    const planeNormal = vec3(0.0, 1.0, 0.0);
-    const shadowPlaneOffset = 0.01;
-    const planeD = 1.0 + shadowPlaneOffset;
+    const lightTarget = vec3(0.0, -0.5, -3.0);
+    const lightUp = vec3(0.0, 1.0, 0.0);
+    const lightProjection = perspective(70.0, 1.0, 0.1, 10.0);
     let lightAngle = 0.0;
     let lastFrameTime = 0.0;
     function getLightPosition(angle) {
         const x = lightCenter[0] + lightRadius * Math.cos(angle);
         const z = lightCenter[2] + lightRadius * Math.sin(angle);
         return vec4(x, lightCenter[1], z, 1.0);
-    }
-    function computeShadowMatrix(lightPos) {
-        const a = planeNormal[0];
-        const b = planeNormal[1];
-        const c = planeNormal[2];
-        const d = planeD;
-        const lx = lightPos[0];
-        const ly = lightPos[1];
-        const lz = lightPos[2];
-        const lw = lightPos[3];
-        const dot = a * lx + b * ly + c * lz + d * lw;
-        return mat4(
-            dot - lx * a,    -lx * b,         -lx * c,         -lx * d,
-            -ly * a,          dot - ly * b,    -ly * c,         -ly * d,
-            -lz * a,          -lz * b,         dot - lz * c,    -lz * d,
-            -lw * a,          -lw * b,         -lw * c,         dot - lw * d
-        );
     }
 
     const renderPassDescriptor = {
@@ -315,6 +307,20 @@ async function main() {
             depthStoreOp: 'store',
         },
     };
+    const shadowPassDescriptor = {
+        colorAttachments: [{
+            view: shadowTextureView,
+            clearValue: { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
+            loadOp: 'clear',
+            storeOp: 'store',
+        }],
+        depthStencilAttachment: {
+            view: shadowDepthTextureView,
+            depthClearValue: 1.0,
+            depthLoadOp: 'clear',
+            depthStoreOp: 'store',
+        },
+    };
 
     function render(time = 0) {
         const seconds = time * 0.001;
@@ -325,26 +331,42 @@ async function main() {
         }
         const yOffset = jumping ? bounceMid + bounceAmp * Math.sin(seconds * bounceSpeed) : bounceMin;
         const model = mult(translate(0.0, yOffset, -3.0), teapotScale);
-        const mvp = computeMVP(model);
         const lightPos = getLightPosition(lightAngle);
+        const lightEye = vec3(lightPos[0], lightPos[1], lightPos[2]);
+        const lightView = lookAt(lightEye, lightTarget, lightUp);
+        const lightVP = mult(zFix, mult(lightProjection, lightView));
+        const groundLightMVP = mult(lightVP, mat4());
+        const teapotLightMVP = mult(lightVP, model);
 
-        teapotUniformData.set(flatten(mvp), 0);
+        groundUniformData.set(flatten(groundLightMVP));
+        device.queue.writeBuffer(groundUniformBuffer, 0, groundUniformData);
+
+        teapotUniformData.set(flatten(teapotLightMVP), 0);
         teapotUniformData.set(flatten(model), 16);
         teapotUniformData.set(lightPos, 32);
         teapotUniformData.set(eyeVec, 36);
         device.queue.writeBuffer(teapotUniformBuffer, 0, teapotUniformData);
 
-        const shadowMatrix = computeShadowMatrix(lightPos);
-        const shadowModel = mult(shadowMatrix, model);
-        const shadowMVP = computeMVP(shadowModel);
-        shadowUniformData.set(flatten(shadowMVP));
-        device.queue.writeBuffer(shadowUniformBuffer, 0, shadowUniformData);
+        const encoder = device.createCommandEncoder();
+
+        lightUniformData.set(flatten(groundLightMVP));
+        device.queue.writeBuffer(lightUniformBuffer, 0, lightUniformData);
+        const shadowPass = encoder.beginRenderPass(shadowPassDescriptor);
+        shadowPass.setPipeline(lightPipeline);
+        shadowPass.setBindGroup(0, lightBindGroup);
+        shadowPass.setVertexBuffer(0, groundPositionBuffer);
+        shadowPass.setIndexBuffer(groundIndexBuffer, 'uint16');
+        shadowPass.drawIndexed(groundIndices.length);
+        lightUniformData.set(flatten(teapotLightMVP));
+        device.queue.writeBuffer(lightUniformBuffer, 0, lightUniformData);
+        shadowPass.setVertexBuffer(0, teapotMesh.shadowVertexBuffer);
+        shadowPass.draw(teapotMesh.vertexCount);
+        shadowPass.end();
 
         updateDepthTexture();
         renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
         renderPassDescriptor.depthStencilAttachment.view = depthTextureView;
 
-        const encoder = device.createCommandEncoder();
         const pass = encoder.beginRenderPass(renderPassDescriptor);
 
         pass.setPipeline(groundPipeline);
@@ -353,11 +375,6 @@ async function main() {
         pass.setIndexBuffer(groundIndexBuffer, 'uint16');
         pass.setBindGroup(0, groundBindGroup);
         pass.drawIndexed(groundIndices.length);
-
-        pass.setPipeline(shadowPipeline);
-        pass.setVertexBuffer(0, teapotMesh.vertexBuffer);
-        pass.setBindGroup(0, shadowBindGroup);
-        pass.draw(teapotMesh.vertexCount);
 
         pass.setPipeline(teapotPipeline);
         pass.setVertexBuffer(0, teapotMesh.vertexBuffer);
@@ -427,9 +444,12 @@ async function main() {
         const indexStorage = obj.indices;
         const faceCount = obj.mat_indices.length;
         const floatsPerVertex = 6;
-        const vertices = new Float32Array(faceCount * 3 * floatsPerVertex);
+        const vertexCount = faceCount * 3;
+        const vertices = new Float32Array(vertexCount * floatsPerVertex);
+        const shadowPositions = new Float32Array(vertexCount * 3);
         let cursor = 0;
         let dst = 0;
+        let shadowDst = 0;
         for (let face = 0; face < faceCount; ++face) {
             for (let i = 0; i < 3; ++i) {
                 const idx = indexStorage[cursor++];
@@ -440,6 +460,9 @@ async function main() {
                 vertices[dst++] = normalStorage[base + 0];
                 vertices[dst++] = normalStorage[base + 1];
                 vertices[dst++] = normalStorage[base + 2];
+                shadowPositions[shadowDst++] = vertexStorage[base + 0];
+                shadowPositions[shadowDst++] = vertexStorage[base + 1];
+                shadowPositions[shadowDst++] = vertexStorage[base + 2];
             }
             cursor++; // skip material index per face
         }
@@ -449,7 +472,12 @@ async function main() {
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         });
         device.queue.writeBuffer(vertexBuffer, 0, vertices);
-        return { vertexBuffer, vertexCount: vertices.length / floatsPerVertex };
+        const shadowVertexBuffer = device.createBuffer({
+            size: shadowPositions.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(shadowVertexBuffer, 0, shadowPositions);
+        return { vertexBuffer, shadowVertexBuffer, vertexCount };
     }
 }
 

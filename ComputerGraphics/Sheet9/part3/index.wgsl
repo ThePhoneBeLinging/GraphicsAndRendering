@@ -4,6 +4,7 @@ struct GroundUniforms {
 @group(0) @binding(0) var<uniform> groundUniforms : GroundUniforms;
 @group(0) @binding(1) var groundSampler : sampler;
 @group(0) @binding(2) var groundTexture : texture_2d<f32>;
+@group(0) @binding(3) var depthTexture : texture_2d<f32>;
 
 struct GroundVertexInput {
     @location(0) position : vec3<f32>,
@@ -25,7 +26,9 @@ fn ground_vs(input : GroundVertexInput) -> GroundVertexOutput {
 
 @fragment
 fn ground_fs(input : GroundVertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(groundTexture, groundSampler, input.uv);
+    let depthSample = textureSample(depthTexture, groundSampler, input.uv).r;
+    let depthColor = vec3<f32>(depthSample);
+    return vec4<f32>(depthColor, 1.0);
 }
 
 struct TeapotUniforms {
@@ -36,10 +39,10 @@ struct TeapotUniforms {
 };
 @group(1) @binding(0) var<uniform> teapotUniforms : TeapotUniforms;
 
-struct ShadowUniforms {
+struct LightUniforms {
     mvp : mat4x4<f32>,
 };
-@group(0) @binding(0) var<uniform> shadowUniforms : ShadowUniforms;
+@group(0) @binding(0) var<uniform> lightUniforms : LightUniforms;
 
 struct TeapotVertexInput {
     @location(0) position : vec3<f32>,
@@ -77,16 +80,26 @@ fn teapot_fs(input : TeapotVertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(color, 1.0);
 }
 
-struct ShadowVertexInput {
+struct LightVertexInput {
     @location(0) position : vec3<f32>,
 };
 
+struct LightVertexOutput {
+    @builtin(position) clipPosition : vec4<f32>,
+    @location(0) ndcDepth : f32,
+};
+
 @vertex
-fn shadow_vs(input : ShadowVertexInput) -> @builtin(position) vec4<f32> {
-    return shadowUniforms.mvp * vec4<f32>(input.position, 1.0);
+fn light_vs(input : LightVertexInput) -> LightVertexOutput {
+    var output : LightVertexOutput;
+    let clip = lightUniforms.mvp * vec4<f32>(input.position, 1.0);
+    output.clipPosition = clip;
+    output.ndcDepth = clip.z / clip.w;
+    return output;
 }
 
 @fragment
-fn shadow_fs() -> @location(0) vec4<f32> {
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+fn light_fs(input : LightVertexOutput) -> @location(0) vec4<f32> {
+    let depthValue = input.ndcDepth * 0.5 + 0.5;
+    return vec4<f32>(depthValue, depthValue, depthValue, 1.0);
 }
