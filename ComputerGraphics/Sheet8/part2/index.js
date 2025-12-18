@@ -177,18 +177,66 @@ async function main() {
             entryPoint: 'fs',
             targets: [{ format }],
         },
-        primitive: { topology: 'triangle-list', cullMode: 'none' },
+        primitive: {
+            topology: 'triangle-list',
+            cullMode: 'none',
+        },
+        depthStencil: {
+            depthWriteEnabled: true,
+            depthCompare: 'less',
+            format: 'depth24plus',
+        },
+    });
+
+    const shadowPipeline = device.createRenderPipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+        vertex: {
+            module,
+            entryPoint: 'vs',
+            buffers: [
+                {
+                    // positions
+                    arrayStride: 12, // 3 * 4
+                    attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+                },
+                {
+                    // texcoords
+                    arrayStride: 8, // 2 * 4
+                    attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }],
+                },
+            ],
+        },
+        fragment: {
+            module,
+            entryPoint: 'fs',
+            targets: [{ format }],
+        },
+        primitive: {
+            topology: 'triangle-list',
+            cullMode: 'none',
+        },
+        depthStencil: {
+            depthWriteEnabled: false,
+            depthCompare: 'less',
+            format: 'depth24plus',
+        },
+    });
+
+    const depthTexture = device.createTexture({
+        size: [canvas.width, canvas.height],
+        format: 'depth24plus',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
     const uniformBuffer = device.createBuffer({
-        size: 64, // mat4
+        size: 128, // mat4 + f32 with padding
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const groundBindGroup = device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
         entries: [
-            { binding: 0, resource: { buffer: uniformBuffer } },
+            { binding: 0, resource: { buffer: uniformBuffer, size: 80 } },
             { binding: 1, resource: sampler },
             { binding: 2, resource: groundTexture.createView() },
         ],
@@ -197,7 +245,7 @@ async function main() {
     const redBindGroup = device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
         entries: [
-            { binding: 0, resource: { buffer: uniformBuffer } },
+            { binding: 0, resource: { buffer: uniformBuffer, size: 80 } },
             { binding: 1, resource: sampler },
             { binding: 2, resource: redTexture.createView() },
         ],
@@ -206,19 +254,50 @@ async function main() {
     const aspect =
         (canvas.clientWidth || canvas.width || 1) / (canvas.clientHeight || canvas.height || 1);
     const projGL = perspective(90.0, aspect, 0.1, 100.0);
-    const view = mat4();
+    const view = lookAt(vec3(0, 1, 0), vec3(0, 0, -2.5), vec3(0, 1, 0));
     function mvpFor(model) {
-        const zfix = mat4(
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 0.5, 0.5,
-            0, 0, 0, 1
-        );
-        return mult(zfix, mult(projGL, mult(view, model)));
+        return mult(projGL, mult(view, model));
     }
 
     const model = mat4();
-    device.queue.writeBuffer(uniformBuffer, 0, flatten(mvpFor(model)));
+
+    const lightPosition = vec3(0, 0, 0);
+    const shadowProjection = mat4();
+
+    function updateShadowProjection(lightPos) {
+        const plane = vec4(0, 1, 0, 1); // y = -1 plane
+        const light = vec4(lightPos[0], lightPos[1], lightPos[2], 1.0);
+        const dotVar = dot(plane, light);
+        const m = mat4();
+        m[0][0] = dotVar - light[0] * plane[0];
+        m[0][1] = -light[0] * plane[1];
+        m[0][2] = -light[0] * plane[2];
+        m[0][3] = -light[0] * plane[3];
+
+        m[1][0] = -light[1] * plane[0];
+        m[1][1] = dotVar - light[1] * plane[1];
+        m[1][2] = -light[1] * plane[2];
+        m[1][3] = -light[1] * plane[3];
+
+        m[2][0] = -light[2] * plane[0];
+        m[2][1] = -light[2] * plane[1];
+        m[2][2] = dotVar - light[2] * plane[2];
+        m[2][3] = -light[2] * plane[3];
+
+        m[3][0] = -light[3] * plane[0];
+        m[3][1] = -light[3] * plane[1];
+        m[3][2] = -light[3] * plane[2];
+        m[3][3] = dotVar - light[3] * plane[3];
+
+        for(let i=0; i<4; ++i) {
+            for(let j=0; j<4; ++j) {
+                shadowProjection[i][j] = m[i][j];
+            }
+        }
+    }
+
+    const uniformData = new Float32Array(16 * 2); // mvp and visibility
+    device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
     const renderPass = {
         colorAttachments: [{
@@ -227,32 +306,67 @@ async function main() {
             loadOp: 'clear',
             storeOp: 'store',
         }],
+        depthStencilAttachment: {
+            view: undefined,
+            depthClearValue: 1.0,
+            depthLoadOp: 'clear',
+            depthStoreOp: 'store',
+        }
     };
 
-    function render() {
+    function render(time) {
+        time *= 0.001; // convert time to seconds
+
+        // Animate light
+        lightPosition[0] = 0 + 2 * Math.cos(time);
+        lightPosition[1] = 2;
+        lightPosition[2] = -2 + 2 * Math.sin(time);
+
+        updateShadowProjection(lightPosition);
+
         renderPass.colorAttachments[0].view = context.getCurrentTexture().createView();
+        renderPass.depthStencilAttachment.view = depthTexture.createView();
         const encoder = device.createCommandEncoder();
         const pass = encoder.beginRenderPass(renderPass);
 
-        pass.setPipeline(pipeline);
         pass.setVertexBuffer(0, vertexBuffer);
         pass.setVertexBuffer(1, texCoordBuffer);
         pass.setIndexBuffer(indexBuffer, 'uint32');
 
         // Draw ground
+        pass.setPipeline(pipeline);
+        uniformData.set(flatten(mvpFor(model)));
+        uniformData.set([1.0], 16); // visibility = 1.0
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
         pass.setBindGroup(0, groundBindGroup);
         pass.drawIndexed(groundIndices.length, 1, 0, 0, 0);
 
+        // Draw red quads' shadows
+        pass.setPipeline(shadowPipeline);
+        const shadowModel = mult(shadowProjection, model);
+        uniformData.set(flatten(mvpFor(shadowModel)));
+        uniformData.set([0.0], 16); // visibility = 0.0 (black)
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        pass.setBindGroup(0, redBindGroup);
+        pass.drawIndexed(redQuad1Indices.length, 1, groundIndices.length, 0, 0);
+        pass.drawIndexed(redQuad2Indices.length, 1, groundIndices.length + redQuad1Indices.length, 0, 0);
+
         // Draw red quads
+        pass.setPipeline(pipeline);
+        uniformData.set(flatten(mvpFor(model)));
+        uniformData.set([1.0], 16); // visibility = 1.0
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
         pass.setBindGroup(0, redBindGroup);
         pass.drawIndexed(redQuad1Indices.length, 1, groundIndices.length, 0, 0);
         pass.drawIndexed(redQuad2Indices.length, 1, groundIndices.length + redQuad1Indices.length, 0, 0);
 
         pass.end();
         device.queue.submit([encoder.finish()]);
+
+        requestAnimationFrame(render);
     }
 
-    render();
+    requestAnimationFrame(render);
 }
 
 window.addEventListener('load', main);

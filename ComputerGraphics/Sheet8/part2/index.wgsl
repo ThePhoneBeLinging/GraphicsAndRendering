@@ -1,5 +1,6 @@
 struct Uniforms {
     mvp : mat4x4<f32>,
+    visibility: f32,
 };
 @group(0) @binding(0) var<uniform> uniforms : Uniforms;
 
@@ -14,6 +15,7 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) position : vec4<f32>,
     @location(0) uv : vec2<f32>,
+    @location(1) visibility: f32,
 };
 
 
@@ -23,11 +25,12 @@ fn vs(input : VertexInput) -> VertexOutput {
     var output : VertexOutput;
     output.position = uniforms.mvp * vec4<f32>(input.position, 1.0);
     output.uv = input.uv;
+    output.visibility = uniforms.visibility;
     return output;
 }
 
 @fragment
 fn fs(input : VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(myTexture, mySampler, input.uv);
-    return color;
+    return color * input.visibility;
 }
